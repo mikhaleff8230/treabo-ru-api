@@ -9,7 +9,10 @@ return new class extends Migration
     public function up()
     {
         Schema::table('user_profiles', function (Blueprint $table) {
-            $table->string('pin_code')->nullable()->after('phone_verified_at')->comment('Зашифрованный PIN-код (4 цифры)');
+            $table
+                ->string('pin_code')
+                ->nullable()
+                ->comment('Зашифрованный PIN-код (4 цифры)');
         });
     }
 
