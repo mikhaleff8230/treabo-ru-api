@@ -166,7 +166,6 @@ return [
          * Package Service Providers...
          */
         Marvel\ShopServiceProvider::class,
-        Marvel\Providers\RestApiServiceProvider::class,
 
         /*
          * Application Service Providers...

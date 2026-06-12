@@ -15,6 +15,7 @@ class Profile extends Model
         'socials' => 'json',
         'avatar' => 'json',
         'notifications' => 'json',
+        'proffi_services' => 'json',
         'phone_verified' => 'boolean',
         'phone_verified_at' => 'datetime',
         'contract_read' => 'boolean',

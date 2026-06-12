@@ -12,6 +12,8 @@ use Marvel\Http\Controllers\PlaceController;
 use Marvel\Http\Controllers\YmlFeedController;
 use Marvel\Enums\Permission;
 
+require __DIR__ . '/proffi.php';
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -1517,4 +1519,3 @@ Route::get('/geocoder/reverse', function (Request $request) {
 // YML Feed для Яндекс.Маркета
 Route::get('/yml-feed', [YmlFeedController::class, 'index']);
 Route::get('/yml-feed/{page?}', [YmlFeedController::class, 'index']);
-

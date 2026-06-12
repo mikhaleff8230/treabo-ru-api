@@ -24,6 +24,11 @@ return [
         'token' => env('POSTMARK_TOKEN'),
     ],
 
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+    ],
+
     'tinkoff' => [
          'terminal_key' => env('TINKOFF_TERMINAL_KEY'),
          'password' => env('TINKOFF_PASSWORD'),
