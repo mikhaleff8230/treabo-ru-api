@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\MoldovaLocationController;
 use App\Http\Controllers\Proffi\AdminController;
 use App\Http\Controllers\Api\AiJobDraftController;
 use App\Http\Controllers\Proffi\AiCategorySchemaController;
@@ -44,6 +45,7 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/locations/moldova/search', [MoldovaLocationController::class, 'search']);
 Route::get('/categories/{category}/attributes', [CategoryAttributeController::class, 'index']);
 Route::get('/ai/categories/{category}/schema', [AiCategorySchemaController::class, 'show']);
 Route::post('/ai/job-draft', [AiJobDraftController::class, 'generate'])->middleware('throttle:10,1');

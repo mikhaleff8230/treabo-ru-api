@@ -315,6 +315,12 @@ class AuthController extends Controller
     private function normalizePhone(string $phone): string
     {
         $digits = preg_replace('/\D/', '', trim($phone));
+        if (strlen($digits) === 11 && str_starts_with($digits, '373')) {
+            return '+' . $digits;
+        }
+        if (strlen($digits) === 8) {
+            return '+373' . $digits;
+        }
         if (strlen($digits) === 11 && (str_starts_with($digits, '8') || str_starts_with($digits, '7'))) {
             return '+7' . substr($digits, 1);
         }
