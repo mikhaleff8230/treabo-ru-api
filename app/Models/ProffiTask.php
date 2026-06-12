@@ -16,6 +16,7 @@ class ProffiTask extends Model
         'lat' => 'float',
         'lng' => 'float',
         'budget' => 'integer',
+        'response_price_mdl' => 'integer',
     ];
 
     public function customer(): BelongsTo

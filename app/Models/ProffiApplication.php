@@ -10,7 +10,10 @@ class ProffiApplication extends Model
 {
     protected $table = 'proffi_applications';
     protected $guarded = [];
-    protected $casts = ['price' => 'integer'];
+    protected $casts = [
+        'price' => 'integer',
+        'response_fee_mdl' => 'integer',
+    ];
 
     public function task(): BelongsTo
     {

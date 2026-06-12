@@ -19,10 +19,10 @@ class SellerBalanceController extends Controller
      * Получить баланс продавца
      * GET /api/seller/balance
      */
-    public function get()
+    public function get(Request $request)
     {
         try {
-            $user = Auth::user();
+            $user = $request->user() ?: Auth::user();
             
             if (!$user) {
                 return response()->json([
@@ -54,10 +54,10 @@ class SellerBalanceController extends Controller
      * Проверить статус последнего пополнения баланса и обработать, если оплачено
      * GET /api/seller/balance/check-pending
      */
-    public function checkPending()
+    public function checkPending(Request $request)
     {
         try {
-            $user = Auth::user();
+            $user = $request->user() ?: Auth::user();
             
             if (!$user) {
                 return response()->json([
@@ -183,7 +183,7 @@ class SellerBalanceController extends Controller
     public function deposit(Request $request)
     {
         try {
-            $user = Auth::user();
+            $user = $request->user() ?: Auth::user();
             
             if (!$user) {
                 return response()->json([
@@ -194,10 +194,47 @@ class SellerBalanceController extends Controller
 
             $request->validate([
                 'amount' => 'required|numeric|min:1',
-                'payment_method' => 'required|in:balance,yookassa',
+                'payment_method' => 'required|in:balance,yookassa,manual',
             ]);
 
             $amount = (float) $request->amount;
+
+            if ($request->payment_method === 'manual') {
+                $paymentUrl = config('services.treabo_balance.manual_payment_url');
+
+                if (empty($paymentUrl)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ручное пополнение баланса пока не настроено'
+                    ], 500);
+                }
+
+                $expiresHours = (int) config('services.treabo_balance.manual_payment_expires_hours', 24);
+                $deposit = BalanceDeposit::create([
+                    'seller_id' => $user->id,
+                    'amount' => $amount,
+                    'payment_id' => 'manual_' . $user->id . '_' . time(),
+                    'status' => 'pending',
+                ]);
+
+                Log::info('SellerBalanceController@deposit: manual balance deposit created', [
+                    'deposit_id' => $deposit->id,
+                    'seller_id' => $user->id,
+                    'amount' => $amount,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Откройте ссылку для ручного пополнения баланса',
+                    'payment_method' => 'manual',
+                    'payment_url' => $paymentUrl,
+                    'payment_id' => $deposit->payment_id,
+                    'deposit_id' => $deposit->id,
+                    'amount' => $amount,
+                    'currency' => 'MDL',
+                    'expires_at' => now()->addHours($expiresHours)->toIso8601String(),
+                ]);
+            }
 
             if ($request->payment_method === 'yookassa') {
                 // Создаем платеж в YooKassa
@@ -453,7 +490,4 @@ class SellerBalanceController extends Controller
         }
     }
 }
-
-
-
 

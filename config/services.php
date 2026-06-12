@@ -57,6 +57,11 @@ return [
         'is_test' => env('YOOKASSA_TEST_MODE', true),
     ],
 
+    'treabo_balance' => [
+        'manual_payment_url' => env('TREABO_BALANCE_MANUAL_PAYMENT_URL'),
+        'manual_payment_expires_hours' => env('TREABO_BALANCE_MANUAL_PAYMENT_EXPIRES_HOURS', 24),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Маркетплейс: физическая доставка и логистика

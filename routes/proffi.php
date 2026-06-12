@@ -13,6 +13,7 @@ use App\Http\Controllers\Proffi\ChatController;
 use App\Http\Controllers\Proffi\JobAttributeController;
 use App\Http\Controllers\Proffi\SpecialistController;
 use App\Http\Controllers\Proffi\TaskController;
+use App\Http\Controllers\SellerBalanceController;
 use App\Http\Controllers\Proffi\UploadController;
 use App\Http\Middleware\ProffiAdminToken;
 use Illuminate\Support\Facades\Route;
@@ -72,6 +73,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/applications/mine', [ApplicationController::class, 'mine']);
     Route::post('/applications/{application}/accept', [ApplicationController::class, 'accept']);
+
+    Route::get('/balance', [SellerBalanceController::class, 'get']);
+    Route::post('/balance/deposit', [SellerBalanceController::class, 'deposit']);
+    Route::get('/balance/check-pending', [SellerBalanceController::class, 'checkPending']);
 
     Route::get('/chats', [ChatController::class, 'index']);
     Route::get('/chats/{chat}', [ChatController::class, 'show']);

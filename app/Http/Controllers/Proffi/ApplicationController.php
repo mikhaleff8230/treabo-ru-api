@@ -27,7 +27,12 @@ class ApplicationController extends Controller
 
         $application = ProffiApplication::updateOrCreate(
             ['task_id' => $task->id, 'specialist_id' => $request->user()->id],
-            ['message' => $data['message'], 'price' => $data['price'] ?? null, 'status' => 'pending']
+            [
+                'message' => $data['message'],
+                'price' => $data['price'] ?? null,
+                'response_fee_mdl' => (int) ($task->response_price_mdl ?? 15),
+                'status' => 'pending',
+            ]
         );
 
         $chat = ProffiChat::updateOrCreate(
@@ -89,6 +94,7 @@ class ApplicationController extends Controller
             'task_title' => $application->task?->title ?? '',
             'message' => $application->message,
             'price' => $application->price,
+            'response_fee_mdl' => (int) ($application->response_fee_mdl ?? 15),
             'status' => $application->status,
             'chat_id' => $chat ? (string) $chat->id : null,
             'created_at' => optional($application->created_at)->toIso8601String(),
