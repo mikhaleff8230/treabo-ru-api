@@ -84,6 +84,13 @@ services:
       dockerfile: Dockerfile.production
     env_file:
       - ../../admin/.env.production
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3002
+      DISABLE_PWA: "true"
+    ports:
+      - "3002:3002"
     depends_on:
       - api
     restart: unless-stopped

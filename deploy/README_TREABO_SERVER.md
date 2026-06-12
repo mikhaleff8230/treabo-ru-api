@@ -103,6 +103,32 @@ cd /var/www/treabo/pixer-api
 docker compose -p treabo -f deploy/treabo-compose.yml up -d --build
 ```
 
+## 5.1 Admin (until DNS)
+
+Admin listens on **port 3002** on the VPS (in addition to nginx vhost when `TREABO_ADMIN_DOMAIN` is set).
+
+```bash
+cp /var/www/treabo/admin/env.vps.template /var/www/treabo/admin/.env.production
+nano /var/www/treabo/admin/.env.production
+
+cd /var/www/treabo/pixer-api
+docker compose -p treabo -f deploy/treabo-compose.yml build --no-cache admin
+docker compose -p treabo -f deploy/treabo-compose.yml up -d admin
+```
+
+Open: `http://<VPS_IP>:3002` (allow firewall: `sudo ufw allow 3002/tcp` if ufw is enabled).
+
+Proffi admin token: set `PROFFI_ADMIN_TOKEN` in `pixer-api/.env.production`, then enter the same value on the admin login screen (do not bake secrets into `NEXT_PUBLIC_*`).
+
+When DNS is ready:
+
+```bash
+export TREABO_ADMIN_DOMAIN=seller.treabo.md   # or admin.treabo.md
+docker compose -p treabo -f deploy/treabo-compose.yml up -d --force-recreate nginx
+```
+
+Then admin is also available at `http://seller.treabo.md` via nginx.
+
 ## 6. HTTPS
 
 For the first launch this compose exposes HTTP on port `80`.
