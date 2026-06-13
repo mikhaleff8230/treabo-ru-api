@@ -81,7 +81,8 @@ class AdminController extends Controller
             return response()->json(['detail' => 'Phone already registered'], 400);
         }
 
-        $email = $data['email'] ?? ('phone-' . (preg_replace('/\D/', '', $phone) ?: Str::random(8)) . '@proffi.local');
+        $email = trim((string) ($data['email'] ?? ''));
+        $email = $email !== '' ? $email : ('phone-' . (preg_replace('/\D/', '', $phone) ?: Str::random(8)) . '@treabo.local');
         if (User::where('email', $email)->exists()) {
             return response()->json(['detail' => 'Email already registered'], 400);
         }
