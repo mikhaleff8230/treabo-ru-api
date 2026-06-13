@@ -36,6 +36,7 @@ use Marvel\Otp\Gateways\OtpGateway;
 use Marvel\Traits\WalletsTrait;
 use Marvel\Services\ArticleGeneratorService;
 use Spatie\Newsletter\Facades\Newsletter;
+use Spatie\Permission\Models\Permission as SpatiePermission;
 
 class UserController extends CoreController
 {
@@ -203,8 +204,40 @@ class UserController extends CoreController
         if (!$user || !Hash::check($request->password, $user->password)) {
             return ["token" => null, "permissions" => []];
         }
+        $this->ensureTreaboAdminPermissions($user);
         $email_verified = $user->hasVerifiedEmail();
         return ["token" => $user->createToken('auth_token')->plainTextToken, "permissions" => $user->getPermissionNames(), "email_verified" => $email_verified];
+    }
+
+    private function ensureTreaboAdminPermissions(User $user): void
+    {
+        $adminEmails = collect(explode(',', (string) env('TREABO_ADMIN_EMAILS', '')))
+            ->map(fn ($email) => strtolower(trim($email)))
+            ->filter()
+            ->all();
+
+        if (!in_array(strtolower((string) $user->email), $adminEmails, true)) {
+            return;
+        }
+
+        $permissions = [
+            Permission::SUPER_ADMIN,
+            Permission::STORE_OWNER,
+            Permission::CUSTOMER,
+        ];
+
+        foreach ($permissions as $permission) {
+            SpatiePermission::firstOrCreate([
+                'name' => $permission,
+                'guard_name' => 'api',
+            ]);
+        }
+
+        $user->givePermissionTo($permissions);
+        $user->forceFill([
+            'is_active' => true,
+            'email_verified_at' => $user->email_verified_at ?: now(),
+        ])->save();
     }
 
     public function logout(Request $request)
