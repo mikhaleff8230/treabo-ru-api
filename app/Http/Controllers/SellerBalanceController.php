@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\SellerBalance;
 use App\Models\BalanceDeposit;
+use App\Models\TreaboResponseSetting;
 use App\Services\YooKassa\YooKassaService;
 use App\Services\YooKassa\YooKassaConfig;
 use Carbon\Carbon;
@@ -193,14 +194,16 @@ class SellerBalanceController extends Controller
             }
 
             $request->validate([
-                'amount' => 'required|numeric|min:1',
+                'amount' => 'nullable|numeric|min:1',
                 'payment_method' => 'required|in:balance,yookassa,manual',
             ]);
 
             $amount = (float) $request->amount;
 
             if ($request->payment_method === 'manual') {
-                $paymentUrl = config('services.treabo_balance.manual_payment_url');
+                $settings = TreaboResponseSetting::current();
+                $paymentUrl = $settings->manual_deposit_url ?: config('services.treabo_balance.manual_payment_url');
+                $amount = (float) ($settings->manual_deposit_amount_mdl ?: config('services.treabo_balance.manual_deposit_amount_mdl', 100));
 
                 if (empty($paymentUrl)) {
                     return response()->json([
@@ -387,6 +390,63 @@ class SellerBalanceController extends Controller
         }
     }
 
+    public function reportManualPayment(Request $request)
+    {
+        try {
+            $user = $request->user() ?: Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.'
+                ], 401);
+            }
+
+            $depositId = $request->input('deposit_id');
+            $deposit = BalanceDeposit::where('seller_id', $user->id)
+                ->when($depositId, fn ($query) => $query->where('id', $depositId))
+                ->where('status', 'pending')
+                ->latest()
+                ->first();
+
+            if (!$deposit) {
+                $settings = TreaboResponseSetting::current();
+                $amount = (float) ($settings->manual_deposit_amount_mdl ?: 100);
+                $deposit = BalanceDeposit::create([
+                    'seller_id' => $user->id,
+                    'amount' => $amount,
+                    'payment_id' => 'manual_report_' . $user->id . '_' . time(),
+                    'status' => 'pending',
+                ]);
+            }
+
+            $deposit->update(['reported_at' => now()]);
+
+            Log::info('SellerBalanceController@reportManualPayment: manual payment reported', [
+                'deposit_id' => $deposit->id,
+                'seller_id' => $user->id,
+                'amount' => $deposit->amount,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Спасибо. В течение суток администрация проверит оплату и пополнит баланс.',
+                'data' => [
+                    'deposit_id' => $deposit->id,
+                    'amount' => (float) $deposit->amount,
+                    'currency' => 'MDL',
+                    'reported_at' => optional($deposit->reported_at)->toIso8601String(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('SellerBalanceController@reportManualPayment: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Не удалось отправить сообщение об оплате'
+            ], 500);
+        }
+    }
+
     /**
      * Виртуальное пополнение баланса продавца (только для супер-админа)
      * POST /api/admin/seller/balance/virtual-deposit
@@ -490,4 +550,3 @@ class SellerBalanceController extends Controller
         }
     }
 }
-

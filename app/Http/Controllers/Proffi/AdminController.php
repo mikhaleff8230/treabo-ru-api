@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Proffi\Concerns\MapsProffiUsers;
 use App\Models\ProffiCategory;
 use App\Models\ProffiApplication;
+use App\Models\BalanceDeposit;
 use App\Models\ProffiChat;
 use App\Models\ProffiFilter;
 use App\Models\ProffiMessage;
@@ -242,6 +243,8 @@ class AdminController extends Controller
         $data = $request->validate([
             'free_daily_limit' => ['required', 'integer', 'min:0', 'max:1000'],
             'default_response_price_mdl' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'manual_deposit_amount_mdl' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'manual_deposit_url' => ['nullable', 'url', 'max:2048'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
@@ -249,10 +252,33 @@ class AdminController extends Controller
         $settings->update([
             'free_daily_limit' => $data['free_daily_limit'],
             'default_response_price_mdl' => $data['default_response_price_mdl'],
+            'manual_deposit_amount_mdl' => $data['manual_deposit_amount_mdl'],
+            'manual_deposit_url' => $data['manual_deposit_url'] ?? null,
             'is_active' => $data['is_active'] ?? true,
         ]);
 
         return $settings->fresh();
+    }
+
+    public function balanceDeposits()
+    {
+        return BalanceDeposit::with('seller.profile')
+            ->latest()
+            ->limit(100)
+            ->get()
+            ->map(fn (BalanceDeposit $deposit) => [
+                'id' => (string) $deposit->id,
+                'seller_id' => (string) $deposit->seller_id,
+                'seller_name' => $deposit->seller?->name,
+                'seller_phone' => $deposit->seller?->profile?->contact,
+                'amount' => (float) $deposit->amount,
+                'status' => $deposit->status,
+                'payment_id' => $deposit->payment_id,
+                'reported_at' => optional($deposit->reported_at)->toIso8601String(),
+                'paid_at' => optional($deposit->paid_at)->toIso8601String(),
+                'created_at' => optional($deposit->created_at)->toIso8601String(),
+            ])
+            ->values();
     }
 
     public function createFilter(Request $request)

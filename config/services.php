@@ -59,6 +59,7 @@ return [
 
     'treabo_balance' => [
         'manual_payment_url' => env('TREABO_BALANCE_MANUAL_PAYMENT_URL'),
+        'manual_deposit_amount_mdl' => env('TREABO_BALANCE_MANUAL_DEPOSIT_AMOUNT_MDL', 100),
         'manual_payment_expires_hours' => env('TREABO_BALANCE_MANUAL_PAYMENT_EXPIRES_HOURS', 24),
     ],
 

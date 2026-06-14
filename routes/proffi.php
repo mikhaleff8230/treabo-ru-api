@@ -77,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/balance', [SellerBalanceController::class, 'get']);
     Route::post('/balance/deposit', [SellerBalanceController::class, 'deposit']);
+    Route::post('/balance/deposit/report', [SellerBalanceController::class, 'reportManualPayment']);
     Route::get('/balance/check-pending', [SellerBalanceController::class, 'checkPending']);
 
     Route::get('/chats', [ChatController::class, 'index']);
@@ -106,6 +107,7 @@ Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
 
     Route::get('/response-settings', [AdminController::class, 'responseSettings']);
     Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
+    Route::get('/balance-deposits', [AdminController::class, 'balanceDeposits']);
 
     Route::get('/tasks', [AdminController::class, 'tasks']);
     Route::post('/tasks', [AdminController::class, 'createTask']);

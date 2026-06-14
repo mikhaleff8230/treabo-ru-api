@@ -13,11 +13,13 @@ class BalanceDeposit extends Model
         'payment_id',
         'status',
         'paid_at',
+        'reported_at',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'paid_at' => 'datetime',
+        'reported_at' => 'datetime',
     ];
 
     /**
