@@ -10,6 +10,7 @@ use App\Models\ProffiChat;
 use App\Models\ProffiFilter;
 use App\Models\ProffiMessage;
 use App\Models\ProffiTask;
+use App\Models\TreaboResponseSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -231,6 +232,29 @@ class AdminController extends Controller
         return ProffiFilter::orderBy('name')->get();
     }
 
+    public function responseSettings()
+    {
+        return TreaboResponseSetting::current();
+    }
+
+    public function updateResponseSettings(Request $request)
+    {
+        $data = $request->validate([
+            'free_daily_limit' => ['required', 'integer', 'min:0', 'max:1000'],
+            'default_response_price_mdl' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $settings = TreaboResponseSetting::current();
+        $settings->update([
+            'free_daily_limit' => $data['free_daily_limit'],
+            'default_response_price_mdl' => $data['default_response_price_mdl'],
+            'is_active' => $data['is_active'] ?? true,
+        ]);
+
+        return $settings->fresh();
+    }
+
     public function createFilter(Request $request)
     {
         $data = $request->validate([
@@ -297,6 +321,8 @@ class AdminController extends Controller
             'lng' => ['nullable', 'numeric'],
         ]);
 
+        $settings = TreaboResponseSetting::current();
+
         $task = ProffiTask::create([
             'title' => $data['title'],
             'description' => $data['description'],
@@ -305,7 +331,7 @@ class AdminController extends Controller
             'city' => $data['city'],
             'address' => $data['address'] ?? null,
             'budget' => $data['budget'] ?? null,
-            'response_price_mdl' => $data['response_price_mdl'] ?? 15,
+            'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
             'deadline' => $data['deadline'] ?? null,
             'status' => $data['status'] ?? 'open',
             'customer_id' => $data['customer_id'],
@@ -334,6 +360,8 @@ class AdminController extends Controller
             'lng' => ['nullable', 'numeric'],
         ]);
 
+        $settings = TreaboResponseSetting::current();
+
         $task->update([
             'title' => $data['title'],
             'description' => $data['description'],
@@ -342,7 +370,7 @@ class AdminController extends Controller
             'city' => $data['city'],
             'address' => $data['address'] ?? null,
             'budget' => $data['budget'] ?? null,
-            'response_price_mdl' => $data['response_price_mdl'] ?? 15,
+            'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
             'deadline' => $data['deadline'] ?? null,
             'status' => $data['status'] ?? 'open',
             'customer_id' => $data['customer_id'],

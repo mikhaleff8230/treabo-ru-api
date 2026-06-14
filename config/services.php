@@ -62,6 +62,11 @@ return [
         'manual_payment_expires_hours' => env('TREABO_BALANCE_MANUAL_PAYMENT_EXPIRES_HOURS', 24),
     ],
 
+    'treabo_responses' => [
+        'free_daily_limit' => env('TREABO_FREE_DAILY_RESPONSES', 5),
+        'default_price_mdl' => env('TREABO_DEFAULT_RESPONSE_PRICE_MDL', 15),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Маркетплейс: физическая доставка и логистика

@@ -67,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/tasks/{job}/attributes', [JobAttributeController::class, 'store'])->whereNumber('job');
     Route::get('/tasks/mine', [TaskController::class, 'mine']);
     Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);
+    Route::get('/tasks/{task}/applications/preview', [ApplicationController::class, 'preview']);
     Route::get('/tasks/{task}/applications', [TaskController::class, 'applications']);
     Route::post('/tasks/{task}/applications', [ApplicationController::class, 'store']);
     Route::get('/tasks/{task}/specialist-info', [TaskController::class, 'specialistInfo']);
@@ -102,6 +103,9 @@ Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
     Route::post('/filters', [AdminController::class, 'createFilter']);
     Route::put('/filters/{id}', [AdminController::class, 'updateFilter']);
     Route::delete('/filters/{id}', [AdminController::class, 'deleteFilter']);
+
+    Route::get('/response-settings', [AdminController::class, 'responseSettings']);
+    Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
 
     Route::get('/tasks', [AdminController::class, 'tasks']);
     Route::post('/tasks', [AdminController::class, 'createTask']);

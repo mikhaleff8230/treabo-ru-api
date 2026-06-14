@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Proffi\Concerns\MapsProffiUsers;
 use App\Models\ProffiCategory;
 use App\Models\ProffiTask;
+use App\Models\TreaboResponseSetting;
 use Illuminate\Http\Request;
 
 class TaskController extends Controller
@@ -62,11 +63,13 @@ class TaskController extends Controller
                 ->value('id');
         }
 
+        $settings = TreaboResponseSetting::current();
+
         $task = ProffiTask::create([
             ...$data,
             'category' => (string) ($categoryId ?: $data['category']),
             'category_id' => $categoryId,
-            'response_price_mdl' => $data['response_price_mdl'] ?? 15,
+            'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
             'customer_id' => $request->user()->id,
             'status' => 'open',
         ]);
