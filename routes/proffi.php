@@ -90,10 +90,12 @@ Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
     Route::get('/customers', [AdminController::class, 'customers']);
     Route::get('/specialists', [AdminController::class, 'specialists']);
     Route::post('/users', [AdminController::class, 'createUser']);
+    Route::put('/users/{user}', [AdminController::class, 'updateUser']);
     Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
 
     Route::get('/categories', [AdminController::class, 'categories']);
     Route::post('/categories', [AdminController::class, 'createCategory']);
+    Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
     Route::delete('/categories/{id}', [AdminController::class, 'deleteCategory']);
 
     Route::get('/filters', [AdminController::class, 'filters']);
@@ -103,6 +105,7 @@ Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
 
     Route::get('/tasks', [AdminController::class, 'tasks']);
     Route::post('/tasks', [AdminController::class, 'createTask']);
+    Route::put('/tasks/{task}', [AdminController::class, 'updateTask']);
     Route::delete('/tasks/{task}', [AdminController::class, 'deleteTask']);
     Route::get('/applications', [AdminController::class, 'applications']);
     Route::get('/chats', [AdminController::class, 'chats']);

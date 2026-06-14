@@ -107,6 +107,55 @@ class AdminController extends Controller
         return response()->json($this->publicUser($user->fresh('profile')), 201);
     }
 
+    public function updateUser(Request $request, User $user)
+    {
+        $data = $request->validate([
+            'phone' => ['required', 'string'],
+            'password' => ['nullable', 'string', 'min:4'],
+            'name' => ['required', 'string'],
+            'city' => ['nullable', 'string'],
+            'email' => ['nullable', 'email'],
+            'services' => ['nullable', 'array'],
+            'services.*' => ['string'],
+        ]);
+
+        $phone = preg_replace('/[^\d+]/', '', trim($data['phone']));
+        $email = trim((string) ($data['email'] ?? ''));
+
+        if ($email !== '' && User::where('email', $email)->whereKeyNot($user->id)->exists()) {
+            return response()->json(['detail' => 'Email already registered'], 400);
+        }
+
+        if (Profile::where('contact', $phone)->where('customer_id', '!=', $user->id)->exists()) {
+            return response()->json(['detail' => 'Phone already registered'], 400);
+        }
+
+        $payload = [
+            'name' => $data['name'],
+            'email' => $email !== '' ? $email : $user->email,
+        ];
+
+        if (!empty($data['password'])) {
+            $payload['password'] = Hash::make($data['password']);
+        }
+
+        $user->update($payload);
+
+        $profileData = ['contact' => $phone];
+        foreach ([
+            'proffi_city' => $data['city'] ?? null,
+            'proffi_services' => $data['services'] ?? [],
+        ] as $column => $value) {
+            if (Schema::hasColumn('user_profiles', $column)) {
+                $profileData[$column] = $value;
+            }
+        }
+
+        Profile::updateOrCreate(['customer_id' => $user->id], $profileData);
+
+        return response()->json($this->publicUser($user->fresh('profile')));
+    }
+
     public function deleteUser(User $user)
     {
         $user->delete();
@@ -122,19 +171,53 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'id' => ['required', 'string', 'max:64'],
+            'parent_id' => ['nullable', 'string', 'max:64'],
             'icon' => ['nullable', 'string', 'max:64'],
             'name_ru' => ['required', 'string'],
             'name_ro' => ['required', 'string'],
+            'slug' => ['nullable', 'string', 'max:128'],
+            'is_active' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer'],
         ]);
 
         $category = ProffiCategory::create([
             'id' => $data['id'],
+            'parent_id' => $data['parent_id'] ?? null,
             'icon' => $data['icon'] ?: 'MoreHorizontal',
             'name_ru' => $data['name_ru'],
             'name_ro' => $data['name_ro'],
+            'slug' => $data['slug'] ?? $data['id'],
+            'is_active' => $data['is_active'] ?? true,
+            'sort_order' => $data['sort_order'] ?? 0,
         ]);
 
         return response()->json($category, 201);
+    }
+
+    public function updateCategory(Request $request, string $id)
+    {
+        $data = $request->validate([
+            'parent_id' => ['nullable', 'string', 'max:64'],
+            'icon' => ['nullable', 'string', 'max:64'],
+            'name_ru' => ['required', 'string'],
+            'name_ro' => ['required', 'string'],
+            'slug' => ['nullable', 'string', 'max:128'],
+            'is_active' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer'],
+        ]);
+
+        $category = ProffiCategory::findOrFail($id);
+        $category->update([
+            'parent_id' => $data['parent_id'] ?? null,
+            'icon' => $data['icon'] ?: 'MoreHorizontal',
+            'name_ru' => $data['name_ru'],
+            'name_ro' => $data['name_ro'],
+            'slug' => $data['slug'] ?? $category->slug,
+            'is_active' => $data['is_active'] ?? true,
+            'sort_order' => $data['sort_order'] ?? 0,
+        ]);
+
+        return $category;
     }
 
     public function deleteCategory(string $id)
@@ -218,6 +301,7 @@ class AdminController extends Controller
             'title' => $data['title'],
             'description' => $data['description'],
             'category' => $data['category'],
+            'category_id' => $data['category'],
             'city' => $data['city'],
             'address' => $data['address'] ?? null,
             'budget' => $data['budget'] ?? null,
@@ -231,6 +315,42 @@ class AdminController extends Controller
         ]);
 
         return response()->json($this->mapTask($task->load(['customer.profile', 'acceptedSpecialist.profile'])), 201);
+    }
+
+    public function updateTask(Request $request, ProffiTask $task)
+    {
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:512'],
+            'description' => ['required', 'string'],
+            'category' => ['required', 'string', 'max:64'],
+            'city' => ['required', 'string', 'max:128'],
+            'address' => ['nullable', 'string', 'max:512'],
+            'budget' => ['nullable', 'integer', 'min:0'],
+            'response_price_mdl' => ['nullable', 'integer', 'min:0'],
+            'deadline' => ['nullable', 'string', 'max:64'],
+            'status' => ['nullable', 'in:open,in_progress,done,cancelled'],
+            'customer_id' => ['required', 'integer', 'exists:users,id'],
+            'lat' => ['nullable', 'numeric'],
+            'lng' => ['nullable', 'numeric'],
+        ]);
+
+        $task->update([
+            'title' => $data['title'],
+            'description' => $data['description'],
+            'category' => $data['category'],
+            'category_id' => $data['category'],
+            'city' => $data['city'],
+            'address' => $data['address'] ?? null,
+            'budget' => $data['budget'] ?? null,
+            'response_price_mdl' => $data['response_price_mdl'] ?? 15,
+            'deadline' => $data['deadline'] ?? null,
+            'status' => $data['status'] ?? 'open',
+            'customer_id' => $data['customer_id'],
+            'lat' => $data['lat'] ?? null,
+            'lng' => $data['lng'] ?? null,
+        ]);
+
+        return response()->json($this->mapTask($task->fresh(['customer.profile', 'acceptedSpecialist.profile'])));
     }
 
     public function deleteTask(ProffiTask $task)
@@ -283,9 +403,11 @@ class AdminController extends Controller
             'title' => $task->title,
             'description' => $task->description,
             'category' => (string) $task->category,
+            'category_id' => $task->category_id ? (string) $task->category_id : null,
             'city' => $task->city,
             'address' => $task->address,
             'budget' => $task->budget,
+            'response_price_mdl' => $task->response_price_mdl,
             'deadline' => $task->deadline,
             'status' => $task->status,
             'customer_id' => (string) $task->customer_id,
