@@ -67,6 +67,8 @@ services:
     build:
       context: ../../shop
       dockerfile: Dockerfile.production
+      args:
+        NEXT_PUBLIC_TREABO_API_ENDPOINT: ${SHOP_TREABO_API_ENDPOINT:-https://api.treabo.md/api}
     env_file:
       - ../../shop/.env.production
     environment:
@@ -74,6 +76,7 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
       DISABLE_PWA: "true"
+      NEXT_PUBLIC_TREABO_API_ENDPOINT: ${SHOP_TREABO_API_ENDPOINT:-https://api.treabo.md/api}
     depends_on:
       - api
     restart: unless-stopped

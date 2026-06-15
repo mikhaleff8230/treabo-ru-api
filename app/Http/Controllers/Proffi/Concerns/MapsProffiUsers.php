@@ -37,12 +37,52 @@ trait MapsProffiUsers
         return null;
     }
 
+    protected function mediaUrls($value): array
+    {
+        if (!$value) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $value = $decoded;
+            } else {
+                return [$value];
+            }
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $urls = [];
+        foreach ($value as $item) {
+            if (is_string($item)) {
+                $urls[] = $item;
+                continue;
+            }
+            if (is_array($item)) {
+                $url = $item['original'] ?? $item['url'] ?? $item['thumbnail'] ?? null;
+                if ($url) {
+                    $urls[] = $url;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($urls)));
+    }
+
     protected function publicUser(User $user): array
     {
         $profile = $user->profile;
         $services = $profile?->proffi_services ?? [];
         if (is_string($services)) {
             $services = json_decode($services, true) ?: [];
+        }
+        $socials = $profile?->socials ?? [];
+        if (is_string($socials)) {
+            $socials = json_decode($socials, true) ?: [];
         }
 
         return [
@@ -56,6 +96,7 @@ trait MapsProffiUsers
             'bio' => $profile?->bio,
             'services' => is_array($services) ? $services : [],
             'avatar' => $this->avatarUrl($profile?->avatar),
+            'portfolio' => $this->mediaUrls(is_array($socials) ? ($socials['treabo_portfolio'] ?? []) : []),
             'lat' => $profile?->proffi_lat !== null ? (float) $profile->proffi_lat : null,
             'lng' => $profile?->proffi_lng !== null ? (float) $profile->proffi_lng : null,
             'last_seen' => optional($user->updated_at)->toIso8601String(),

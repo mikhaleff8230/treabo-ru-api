@@ -262,6 +262,8 @@ class AuthController extends Controller
             'bio' => ['nullable', 'string'],
             'services' => ['nullable', 'array'],
             'avatar' => ['nullable', 'string'],
+            'portfolio' => ['nullable', 'array', 'max:10'],
+            'portfolio.*' => ['string'],
             'city' => ['nullable', 'string'],
             'lat' => ['nullable', 'numeric'],
             'lng' => ['nullable', 'numeric'],
@@ -274,6 +276,17 @@ class AuthController extends Controller
         if (array_key_exists('city', $data)) $patch['proffi_city'] = $data['city'];
         if (array_key_exists('lat', $data)) $patch['proffi_lat'] = $data['lat'];
         if (array_key_exists('lng', $data)) $patch['proffi_lng'] = $data['lng'];
+        if (array_key_exists('portfolio', $data)) {
+            $socials = $profile->socials;
+            if (is_string($socials)) {
+                $socials = json_decode($socials, true) ?: [];
+            }
+            if (!is_array($socials)) {
+                $socials = [];
+            }
+            $socials['treabo_portfolio'] = array_values(array_slice($data['portfolio'] ?? [], 0, 10));
+            $patch['socials'] = $socials;
+        }
         $profile->update($patch);
         return $this->publicUser($request->user()->fresh('profile'));
     }
