@@ -43,7 +43,7 @@ class AttachmentController extends CoreController
     public function store(AttachmentRequest $request)
     {
         $urls = [];
-        $mediaDisk = 's3';
+        $mediaDisk = config('media-library.disk_name') ?: config('shop.media_disk') ?: 'public';
         foreach ($request->attachment as $media) {
             $attachment = new Attachment;
             $attachment->save();
