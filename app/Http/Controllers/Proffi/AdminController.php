@@ -76,6 +76,9 @@ class AdminController extends Controller
             'role' => ['required', 'in:customer,specialist,admin'],
             'city' => ['nullable', 'string'],
             'email' => ['nullable', 'email'],
+            'avatar' => ['nullable', 'string', 'max:2048'],
+            'portfolio' => ['nullable', 'array', 'max:10'],
+            'portfolio.*' => ['string', 'max:2048'],
         ]);
 
         $phone = preg_replace('/[^\d+]/', '', trim($data['phone']));
@@ -98,7 +101,12 @@ class AdminController extends Controller
         $user->forceFill(['email_verified_at' => now()])->save();
         $this->assignRole($user, $data['role']);
 
-        $profileData = ['contact' => $phone, 'bio' => null];
+        $profileData = [
+            'contact' => $phone,
+            'bio' => null,
+            'avatar' => $this->avatarPayload($data['avatar'] ?? null),
+            'socials' => $this->socialsPayload([], $data['portfolio'] ?? []),
+        ];
         foreach (['proffi_city' => $data['city'] ?? null, 'proffi_services' => []] as $column => $value) {
             if (Schema::hasColumn('user_profiles', $column)) {
                 $profileData[$column] = $value;
@@ -119,6 +127,9 @@ class AdminController extends Controller
             'email' => ['nullable', 'email'],
             'services' => ['nullable', 'array'],
             'services.*' => ['string'],
+            'avatar' => ['nullable', 'string', 'max:2048'],
+            'portfolio' => ['nullable', 'array', 'max:10'],
+            'portfolio.*' => ['string', 'max:2048'],
         ]);
 
         $phone = preg_replace('/[^\d+]/', '', trim($data['phone']));
@@ -143,6 +154,7 @@ class AdminController extends Controller
 
         $user->update($payload);
 
+        $profile = $user->profile;
         $profileData = ['contact' => $phone];
         foreach ([
             'proffi_city' => $data['city'] ?? null,
@@ -151,6 +163,14 @@ class AdminController extends Controller
             if (Schema::hasColumn('user_profiles', $column)) {
                 $profileData[$column] = $value;
             }
+        }
+
+        if (array_key_exists('avatar', $data)) {
+            $profileData['avatar'] = $this->avatarPayload($data['avatar']);
+        }
+
+        if (array_key_exists('portfolio', $data)) {
+            $profileData['socials'] = $this->socialsPayload($profile?->socials ?? [], $data['portfolio'] ?? []);
         }
 
         Profile::updateOrCreate(['customer_id' => $user->id], $profileData);
@@ -345,6 +365,8 @@ class AdminController extends Controller
             'customer_id' => ['required', 'integer', 'exists:users,id'],
             'lat' => ['nullable', 'numeric'],
             'lng' => ['nullable', 'numeric'],
+            'photos' => ['nullable', 'array', 'max:10'],
+            'photos.*' => ['string', 'max:2048'],
         ]);
 
         $settings = TreaboResponseSetting::current();
@@ -363,7 +385,7 @@ class AdminController extends Controller
             'customer_id' => $data['customer_id'],
             'lat' => $data['lat'] ?? null,
             'lng' => $data['lng'] ?? null,
-            'photos' => [],
+            'photos' => $this->mediaList($data['photos'] ?? []),
         ]);
 
         return response()->json($this->mapTask($task->load(['customer.profile', 'acceptedSpecialist.profile'])), 201);
@@ -384,6 +406,8 @@ class AdminController extends Controller
             'customer_id' => ['required', 'integer', 'exists:users,id'],
             'lat' => ['nullable', 'numeric'],
             'lng' => ['nullable', 'numeric'],
+            'photos' => ['nullable', 'array', 'max:10'],
+            'photos.*' => ['string', 'max:2048'],
         ]);
 
         $settings = TreaboResponseSetting::current();
@@ -402,6 +426,7 @@ class AdminController extends Controller
             'customer_id' => $data['customer_id'],
             'lat' => $data['lat'] ?? null,
             'lng' => $data['lng'] ?? null,
+            'photos' => $this->mediaList($data['photos'] ?? []),
         ]);
 
         return response()->json($this->mapTask($task->fresh(['customer.profile', 'acceptedSpecialist.profile'])));
@@ -470,6 +495,7 @@ class AdminController extends Controller
             'accepted_specialist_id' => $task->accepted_specialist_id ? (string) $task->accepted_specialist_id : null,
             'accepted_specialist_name' => $task->acceptedSpecialist?->name,
             'applications_count' => (int) ($task->applications_count ?? 0),
+            'photos' => $this->mediaList($task->photos ?: []),
             'photos_count' => count($task->photos ?: []),
             'lat' => $task->lat !== null ? (float) $task->lat : null,
             'lng' => $task->lng !== null ? (float) $task->lng : null,
@@ -496,6 +522,44 @@ class AdminController extends Controller
             'created_at' => optional($application->created_at)->toIso8601String(),
             'updated_at' => optional($application->updated_at)->toIso8601String(),
         ];
+    }
+
+    private function avatarPayload(?string $url): ?array
+    {
+        $url = trim((string) $url);
+
+        return $url !== ''
+            ? ['original' => $url, 'thumbnail' => $url]
+            : null;
+    }
+
+    private function socialsPayload($existing, array $portfolio): array
+    {
+        if (is_string($existing)) {
+            $existing = json_decode($existing, true) ?: [];
+        }
+        if (!is_array($existing)) {
+            $existing = [];
+        }
+
+        $existing['treabo_portfolio'] = $this->mediaList($portfolio);
+
+        return $existing;
+    }
+
+    private function mediaList($value): array
+    {
+        if (is_string($value)) {
+            $value = json_decode($value, true) ?: [$value];
+        }
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_unique(array_map(
+            fn ($item) => is_string($item) ? trim($item) : '',
+            $value
+        ))));
     }
 
     private function mapChat(ProffiChat $chat): array
