@@ -13,12 +13,29 @@ class AddDimensionsToProductGroupsTable extends Migration
      */
     public function up()
     {
-        Schema::table('product_groups', function (Blueprint $table) {
-            $table->string('height')->nullable()->after('short_description');
-            $table->string('length')->nullable()->after('height');
-            $table->string('width')->nullable()->after('length');
-            $table->decimal('weight', 10, 2)->nullable()->after('width');
-        });
+        if (!Schema::hasColumn('product_groups', 'height')) {
+            Schema::table('product_groups', function (Blueprint $table) {
+                $table->string('height')->nullable()->after('short_description');
+            });
+        }
+
+        if (!Schema::hasColumn('product_groups', 'length')) {
+            Schema::table('product_groups', function (Blueprint $table) {
+                $table->string('length')->nullable()->after('height');
+            });
+        }
+
+        if (!Schema::hasColumn('product_groups', 'width')) {
+            Schema::table('product_groups', function (Blueprint $table) {
+                $table->string('width')->nullable()->after('length');
+            });
+        }
+
+        if (!Schema::hasColumn('product_groups', 'weight')) {
+            Schema::table('product_groups', function (Blueprint $table) {
+                $table->decimal('weight', 10, 2)->nullable()->after('width');
+            });
+        }
     }
 
     /**
@@ -28,9 +45,16 @@ class AddDimensionsToProductGroupsTable extends Migration
      */
     public function down()
     {
-        Schema::table('product_groups', function (Blueprint $table) {
-            $table->dropColumn(['height', 'length', 'width', 'weight']);
-        });
+        $columns = array_values(array_filter(
+            ['height', 'length', 'width', 'weight'],
+            fn ($column) => Schema::hasColumn('product_groups', $column)
+        ));
+
+        if ($columns !== []) {
+            Schema::table('product_groups', function (Blueprint $table) use ($columns) {
+                $table->dropColumn($columns);
+            });
+        }
     }
 }
 
