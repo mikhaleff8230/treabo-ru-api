@@ -15,10 +15,8 @@ class MoldovaLocationController extends Controller
             'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
             'type' => ['nullable', 'string', 'max:100'],
             'district' => ['nullable', 'string', 'max:100'],
-            'locale' => ['nullable', 'in:ru,ro'],
         ]);
 
-        $locale = $data['locale'] ?? 'ro';
         $limit = (int) ($data['limit'] ?? 12);
 
         $query = MoldovaLocation::query()->active()->ordered();
@@ -33,8 +31,7 @@ class MoldovaLocationController extends Controller
         if (!empty($data['district'])) {
             $district = $data['district'];
             $query->where(function ($inner) use ($district) {
-                $inner->where('district_ro', 'like', '%' . $district . '%')
-                    ->orWhere('district_ru', 'like', '%' . $district . '%');
+                $inner->where('district_ru', 'like', '%' . $district . '%');
             });
         }
 
@@ -46,26 +43,22 @@ class MoldovaLocationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $locations->map(fn (MoldovaLocation $location) => $this->formatLocation($location, $locale))->values(),
+            'data' => $locations->map(fn (MoldovaLocation $location) => $this->formatLocation($location))->values(),
         ]);
     }
 
-    private function formatLocation(MoldovaLocation $location, string $locale): array
+    private function formatLocation(MoldovaLocation $location): array
     {
-        $districtRo = $location->district_ro;
         $districtRu = $location->district_ru;
-        $nameRo = $location->name_ro;
-        $nameRu = $location->name_ru ?: $location->name_ro;
+        $nameRu = $location->name_ru;
 
         return [
             'id' => $location->id,
             'cuatm_code' => $location->cuatm_code,
-            'name' => $locale === 'ru' ? $nameRu : $nameRo,
-            'name_ro' => $nameRo,
+            'name' => $nameRu,
             'name_ru' => $nameRu,
             'ascii_name' => $location->ascii_name,
-            'district' => $locale === 'ru' ? ($districtRu ?: $districtRo) : ($districtRo ?: $districtRu),
-            'district_ro' => $districtRo,
+            'district' => $districtRu,
             'district_ru' => $districtRu,
             'type' => $location->type,
             'lat' => $location->lat,

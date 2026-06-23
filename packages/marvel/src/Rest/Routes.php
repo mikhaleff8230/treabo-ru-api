@@ -57,6 +57,7 @@ use App\Http\Controllers\Admin\AdminBillingSettingsController;
 use App\Http\Controllers\Admin\AdminBillingReportsController;
 use App\Http\Controllers\Admin\AdminBillingPlanController;
 use App\Http\Controllers\CourseController;
+use App\Http\Controllers\SellerBalanceController;
 use Marvel\Http\Controllers\PvzController;
 use Marvel\Http\Controllers\UserAddressController;
 use Marvel\Http\Controllers\ShipmentController;
@@ -525,6 +526,13 @@ Route::post('free-downloads/digital-file', [DownloadController::class, 'generate
 
 // Any authenticated user (admin, seller, customer) — required by Next.js admin /me
 Route::middleware(['auth:sanctum', 'email.verified'])->get('me', [UserController::class, 'me']);
+
+// Proffi seller balance — root routes (same auth as /token and /me, not under /api prefix)
+Route::middleware('auth:sanctum')->prefix('seller')->group(function () {
+    Route::get('/balance', [SellerBalanceController::class, 'get']);
+    Route::post('/balance/deposit', [SellerBalanceController::class, 'deposit']);
+    Route::get('/balance/check-pending', [SellerBalanceController::class, 'checkPending']);
+});
 
 Route::group(['middleware' => ['can:' . Permission::CUSTOMER, 'auth:sanctum', 'email.verified']], function () {
 

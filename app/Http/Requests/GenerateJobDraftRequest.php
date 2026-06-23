@@ -17,7 +17,7 @@ class GenerateJobDraftRequest extends FormRequest
             'text' => ['required', 'string', 'min:5', 'max:3000'],
             'city_hint' => ['nullable', 'string', 'max:100'],
             'category_hint' => ['nullable', 'string', 'max:100'],
-            'language_hint' => ['nullable', 'in:auto,ru,ro'],
+            'language_hint' => ['nullable', 'in:auto,ru'],
         ];
     }
 }

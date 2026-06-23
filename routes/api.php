@@ -120,7 +120,7 @@ Route::middleware('auth:api')->prefix('pro-subscription')->group(function () {
 Route::get('/pro-subscription/check/{sellerId}', [App\Http\Controllers\ProSubscriptionController::class, 'checkPublic'])->middleware('throttle:60,1');
 
 // Seller Balance API routes (для продавцов)
-Route::middleware('auth:api')->prefix('seller')->group(function () {
+Route::middleware('auth:sanctum')->prefix('seller')->group(function () {
     Route::get('/balance', [App\Http\Controllers\SellerBalanceController::class, 'get']);
     Route::post('/balance/deposit', [App\Http\Controllers\SellerBalanceController::class, 'deposit']);
     Route::get('/balance/check-pending', [App\Http\Controllers\SellerBalanceController::class, 'checkPending']);

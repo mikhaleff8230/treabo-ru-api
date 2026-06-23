@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 class JobDraftAiService
 {
-    private const LANGUAGES = ['ru', 'ro', 'mixed', 'unknown'];
+    private const LANGUAGES = ['ru', 'unknown'];
     private const URGENCIES = ['urgent', 'this_week', 'this_month', 'flexible', 'unknown'];
     private const CATEGORIES = [
         'bathroom-renovation',
@@ -168,7 +168,7 @@ class JobDraftAiService
     {
         return <<<'PROMPT'
 Ты AI-помощник сервиса Treabo для оформления заявок на услуги мастеров в Молдове.
-Пользователь может писать плохо, коротко, с ошибками, на русском, румынском или смешанно.
+Пользователь пишет на русском и может писать плохо, коротко или с ошибками.
 Твоя задача — превратить хаотичный текст в понятную заявку для мастера.
 Не выдумывай факты.
 Если данных нет — добавь вопрос в missing_questions.
@@ -181,7 +181,7 @@ PROMPT;
     private function userPrompt(array $data): string
     {
         $schema = [
-            'detected_language' => 'ru|ro|mixed|unknown',
+            'detected_language' => 'ru|unknown',
             'title' => 'string',
             'category_slug' => 'bathroom-renovation|tile-work|plumbing|electrical|air-conditioners|other',
             'city' => 'string|null',

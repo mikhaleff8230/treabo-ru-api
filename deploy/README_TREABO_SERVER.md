@@ -133,6 +133,12 @@ docker compose -p treabo -f deploy/treabo-compose.yml exec api php artisan treab
   --email=admin@treabo.md --password='YourSecurePass123' --name='Admin'
 ```
 
+If `php artisan route:list` fails with `OrderController` / empty `settings`, seed a **single default row** (safe: skips when any row exists):
+
+```bash
+docker compose -p treabo -f deploy/treabo-compose.yml exec api php artisan treabo:ensure-settings
+```
+
 (`filament:create-admin` does the same DB work but is legacy naming — Treabo admin is **Next.js only**, not Filament.)
 
 Do **not** open `https://api.treabo.md/token` in the browser — that URL accepts **POST only** (login XHR from seller). A GET shows «405 Method Not Allowed» and is normal.
