@@ -17,6 +17,8 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TREABO_API_HOST_PORT:-8010}:8000"
     command: >
       sh -lc "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views bootstrap/cache
       && (test -f vendor/autoload.php || COMPOSER_CACHE_DIR=/tmp/composer-cache composer install --no-interaction --prefer-dist --no-dev --optimize-autoloader)
@@ -68,7 +70,7 @@ services:
       context: ../../shop
       dockerfile: Dockerfile.production
       args:
-        NEXT_PUBLIC_TREABO_API_ENDPOINT: ${SHOP_TREABO_API_ENDPOINT:-https://api.treabo.md/api}
+        NEXT_PUBLIC_TREABO_API_ENDPOINT: ${SHOP_TREABO_API_ENDPOINT:-https://api.treabo.ru/api}
     env_file:
       - ../../shop/.env.production
     environment:
@@ -76,19 +78,21 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
       DISABLE_PWA: "true"
-      NEXT_PUBLIC_TREABO_API_ENDPOINT: ${SHOP_TREABO_API_ENDPOINT:-https://api.treabo.md/api}
+      NEXT_PUBLIC_TREABO_API_ENDPOINT: ${SHOP_TREABO_API_ENDPOINT:-https://api.treabo.ru/api}
     depends_on:
       - api
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TREABO_SHOP_HOST_PORT:-3010}:3000"
 
   admin:
     build:
       context: ../../admin
       dockerfile: Dockerfile.production
       args:
-        NEXT_PUBLIC_REST_API_ENDPOINT: ${ADMIN_API_URL:-https://api.treabo.md}
-        NEXT_PUBLIC_API_URL: ${ADMIN_API_URL:-https://api.treabo.md}
-        NEXT_PUBLIC_SHOP_URL: ${ADMIN_SHOP_URL:-https://treabo.md}
+        NEXT_PUBLIC_REST_API_ENDPOINT: ${ADMIN_API_URL:-https://api.treabo.ru}
+        NEXT_PUBLIC_API_URL: ${ADMIN_API_URL:-https://api.treabo.ru}
+        NEXT_PUBLIC_SHOP_URL: ${ADMIN_SHOP_URL:-https://treabo.ru}
     env_file:
       - ../../admin/.env.production
     environment:
@@ -97,7 +101,7 @@ services:
       PORT: 3002
       DISABLE_PWA: "true"
     ports:
-      - "3002:3002"
+      - "127.0.0.1:${TREABO_ADMIN_HOST_PORT:-3012}:3002"
     depends_on:
       - api
     restart: unless-stopped
@@ -107,9 +111,9 @@ services:
     ports:
       - "80:80"
     environment:
-      TREABO_DOMAIN: ${TREABO_DOMAIN:-treabo.md www.treabo.md}
-      TREABO_ADMIN_DOMAIN: ${TREABO_ADMIN_DOMAIN:-seller.treabo.md}
-      TREABO_API_DOMAIN: ${TREABO_API_DOMAIN:-api.treabo.md}
+      TREABO_DOMAIN: ${TREABO_DOMAIN:-treabo.ru www.treabo.ru}
+      TREABO_ADMIN_DOMAIN: ${TREABO_ADMIN_DOMAIN:-seller.treabo.ru}
+      TREABO_API_DOMAIN: ${TREABO_API_DOMAIN:-api.treabo.ru}
       NGINX_ENVSUBST_FILTER: "^TREABO_"
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
