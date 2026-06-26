@@ -24,6 +24,10 @@ return [
         'https://www.treabo.md',
         'https://seller.treabo.md',
         'https://api.treabo.md',
+        'https://treabo.ru',
+        'https://www.treabo.ru',
+        'https://seller.treabo.ru',
+        'https://api.treabo.ru',
         'http://localhost:*',
         'http://127.0.0.1:*',
         'exp://*',
@@ -32,6 +36,7 @@ return [
 
     'allowed_origins_patterns' => [
         '/^https?:\/\/.*\.treabo\.md$/',
+        '/^https?:\/\/.*\.treabo\.ru$/',
     ],
 
     'allowed_headers' => ['*'],

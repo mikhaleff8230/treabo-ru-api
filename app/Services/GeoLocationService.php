@@ -839,7 +839,7 @@ class GeoLocationService
                     'query' => $query,
                     'count' => 10,
                     'locations' => [
-                        ['kladr_id' => '*'] // Все регионы
+                        ['country_iso_code' => 'RU']
                     ],
                     'from_bound' => ['value' => 'city'],
                     'to_bound' => ['value' => 'city']

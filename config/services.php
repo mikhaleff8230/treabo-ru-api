@@ -109,6 +109,7 @@ return [
         'api_key' => env('DADATA_API_KEY'),
         'secret_key' => env('DADATA_SECRET_KEY'),
         'api_url' => env('DADATA_API_URL', 'https://suggestions.dadata.ru/suggestions/api/4_1/rs'),
+        'city_fallback_enabled' => env('DADATA_CITY_FALLBACK_ENABLED', true),
     ],
 
     'yandex_geocoder' => [

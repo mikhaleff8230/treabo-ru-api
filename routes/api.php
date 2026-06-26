@@ -1430,6 +1430,18 @@ Route::prefix('user-location')->group(function () {
 // API для получения списка российских городов
 Route::get('/russian-cities', function () {
     try {
+        if (\Illuminate\Support\Facades\Schema::hasTable('russia_locations')) {
+            $locations = \App\Models\RussiaLocation::query()
+                ->active()
+                ->ordered()
+                ->limit(100)
+                ->get(['id', 'name', 'region']);
+
+            if ($locations->isNotEmpty()) {
+                return response()->json($locations);
+            }
+        }
+
         // Здесь должен быть список российских городов
         // Пока возвращаем заглушку
         $cities = [
