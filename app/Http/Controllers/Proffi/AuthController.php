@@ -368,6 +368,10 @@ class AuthController extends Controller
             'www.treabo.md',
             'seller.treabo.md',
             'api.treabo.md',
+            'treabo.ru',
+            'www.treabo.ru',
+            'seller.treabo.ru',
+            'api.treabo.ru',
         ], true);
     }
 

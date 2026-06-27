@@ -76,6 +76,8 @@ class AdminController extends Controller
             'role' => ['required', 'in:customer,specialist,admin'],
             'city' => ['nullable', 'string'],
             'email' => ['nullable', 'email'],
+            'services' => ['nullable', 'array'],
+            'services.*' => ['string'],
             'avatar' => ['nullable', 'string', 'max:2048'],
             'portfolio' => ['nullable', 'array', 'max:10'],
             'portfolio.*' => ['string', 'max:2048'],
@@ -107,7 +109,7 @@ class AdminController extends Controller
             'avatar' => $this->avatarPayload($data['avatar'] ?? null),
             'socials' => $this->socialsPayload([], $data['portfolio'] ?? []),
         ];
-        foreach (['proffi_city' => $data['city'] ?? null, 'proffi_services' => []] as $column => $value) {
+        foreach (['proffi_city' => $data['city'] ?? null, 'proffi_services' => $data['services'] ?? []] as $column => $value) {
             if (Schema::hasColumn('user_profiles', $column)) {
                 $profileData[$column] = $value;
             }
@@ -196,7 +198,7 @@ class AdminController extends Controller
             'parent_id' => ['nullable', 'string', 'max:64'],
             'icon' => ['nullable', 'string', 'max:64'],
             'name_ru' => ['required', 'string'],
-            'name_ro' => ['required', 'string'],
+            'name_ro' => ['nullable', 'string'],
             'slug' => ['nullable', 'string', 'max:128'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer'],
@@ -207,7 +209,7 @@ class AdminController extends Controller
             'parent_id' => $data['parent_id'] ?? null,
             'icon' => $data['icon'] ?: 'MoreHorizontal',
             'name_ru' => $data['name_ru'],
-            'name_ro' => $data['name_ro'],
+            'name_ro' => $data['name_ro'] ?? $data['name_ru'],
             'slug' => $data['slug'] ?? $data['id'],
             'is_active' => $data['is_active'] ?? true,
             'sort_order' => $data['sort_order'] ?? 0,
@@ -222,7 +224,7 @@ class AdminController extends Controller
             'parent_id' => ['nullable', 'string', 'max:64'],
             'icon' => ['nullable', 'string', 'max:64'],
             'name_ru' => ['required', 'string'],
-            'name_ro' => ['required', 'string'],
+            'name_ro' => ['nullable', 'string'],
             'slug' => ['nullable', 'string', 'max:128'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer'],
@@ -233,7 +235,7 @@ class AdminController extends Controller
             'parent_id' => $data['parent_id'] ?? null,
             'icon' => $data['icon'] ?: 'MoreHorizontal',
             'name_ru' => $data['name_ru'],
-            'name_ro' => $data['name_ro'],
+            'name_ro' => $data['name_ro'] ?? $data['name_ru'],
             'slug' => $data['slug'] ?? $category->slug,
             'is_active' => $data['is_active'] ?? true,
             'sort_order' => $data['sort_order'] ?? 0,
