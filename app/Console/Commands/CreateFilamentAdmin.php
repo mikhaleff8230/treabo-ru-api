@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Marvel\Database\Models\User;
+use Marvel\Enums\Permission;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 
@@ -142,6 +143,25 @@ class CreateFilamentAdmin extends Command
                     $this->info('  >>> \\Spatie\\Permission\\Models\\Role::create([\'name\' => \'super_admin\', \'guard_name\' => \'web\']);');
                 }
             }
+
+            // Next.js seller admin authorizes by direct permissions from /token.
+            // Roles alone are not enough for the React admin guard.
+            $adminPermissions = [
+                Permission::SUPER_ADMIN,
+                Permission::STORE_OWNER,
+                Permission::CUSTOMER,
+            ];
+
+            foreach ($adminPermissions as $permissionName) {
+                \Spatie\Permission\Models\Permission::firstOrCreate([
+                    'name' => $permissionName,
+                    'guard_name' => 'api',
+                ]);
+            }
+
+            $user->givePermissionTo($adminPermissions);
+            $user->forgetCachedPermissions();
+            $this->info('Права super_admin/store_owner/customer для Next.js admin назначены.');
 
             $this->info("✅ Администратор успешно создан!");
             $this->info("   Имя: {$user->name}");
