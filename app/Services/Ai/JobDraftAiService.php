@@ -167,7 +167,7 @@ class JobDraftAiService
     private function systemPrompt(): string
     {
         return <<<'PROMPT'
-Ты AI-помощник сервиса Treabo для оформления заявок на услуги мастеров в Молдове.
+Ты AI-помощник сервиса Treabo для оформления заявок на услуги мастеров в России.
 Пользователь пишет на русском и может писать плохо, коротко или с ошибками.
 Твоя задача — превратить хаотичный текст в понятную заявку для мастера.
 Не выдумывай факты.
@@ -193,7 +193,7 @@ PROMPT;
         ];
 
         return json_encode([
-            'task' => 'Generate a structured Treabo job draft for masters in Moldova. Return only valid JSON matching response_schema.',
+            'task' => 'Generate a structured Treabo job draft for masters in Russia. Return only valid JSON matching response_schema.',
             'input' => [
                 'text' => $data['text'] ?? '',
                 'city_hint' => $data['city_hint'] ?? null,
@@ -204,7 +204,8 @@ PROMPT;
                 'Do not publish the job.',
                 'Do not invent facts.',
                 'Use city_hint/category_hint only as hints, not as guaranteed facts.',
-                'If text mentions Kishinev, Chisinau, Chisinău, Кишинев or Кишинёв, normalize city to Chișinău.',
+                'If text mentions Moscow, Москва, SPb, Санкт-Петербург or other Russian cities, normalize city to the proper Russian name.',
+                'Default city_hint is Москва when city is unknown.',
                 'If important fields are missing, add clear questions to missing_questions.',
                 'For bathroom/tile/plumbing/electrical/air conditioner work choose the closest allowed category_slug.',
                 'Use ai_knowledge as Treabo internal knowledge. Prefer matching categories, works, parameters and questions from it.',
