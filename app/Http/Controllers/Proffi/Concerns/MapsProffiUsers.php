@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Proffi\Concerns;
 
 use Marvel\Database\Models\User;
 use Marvel\Enums\Permission;
+use App\Models\ProffiReview;
 
 trait MapsProffiUsers
 {
@@ -73,6 +74,17 @@ trait MapsProffiUsers
         return array_values(array_unique(array_filter($urls)));
     }
 
+    protected function specialistRatingSummary(User $user): array
+    {
+        $query = ProffiReview::where('specialist_id', $user->id);
+        $count = (int) $query->count();
+
+        return [
+            'rating' => $count > 0 ? round((float) $query->avg('rating'), 1) : 0.0,
+            'reviews_count' => $count,
+        ];
+    }
+
     protected function publicUser(User $user): array
     {
         $profile = $user->profile;
@@ -85,14 +97,18 @@ trait MapsProffiUsers
             $socials = json_decode($socials, true) ?: [];
         }
 
+        $rating = $this->proffiRole($user) === 'specialist'
+            ? $this->specialistRatingSummary($user)
+            : ['rating' => 0.0, 'reviews_count' => 0];
+
         return [
             'id' => (string) $user->id,
             'phone' => $profile?->contact ?? '',
             'name' => $user->name ?? '',
             'role' => $this->proffiRole($user),
             'city' => $profile?->proffi_city,
-            'rating' => 0.0,
-            'reviews_count' => 0,
+            'rating' => $rating['rating'],
+            'reviews_count' => $rating['reviews_count'],
             'bio' => $profile?->bio,
             'services' => is_array($services) ? $services : [],
             'avatar' => $this->avatarUrl($profile?->avatar),

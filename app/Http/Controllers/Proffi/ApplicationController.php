@@ -127,7 +127,7 @@ class ApplicationController extends Controller
             'is_free' => $isFree,
             'response_fee_mdl' => $existing ? (int) ($existing->response_fee_mdl ?? 0) : ($isFree ? 0 : $price),
             'default_response_price_mdl' => (int) $settings->default_response_price_mdl,
-            'currency' => 'MDL',
+            'currency' => 'RUB',
         ];
     }
 

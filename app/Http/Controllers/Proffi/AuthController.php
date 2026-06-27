@@ -328,13 +328,16 @@ class AuthController extends Controller
     {
         $user = $request->user();
         if ($this->proffiRole($user) === 'specialist') {
+            $rating = $this->specialistRatingSummary($user);
+
             return [
                 'role' => 'specialist',
                 'applied' => \App\Models\ProffiApplication::where('specialist_id', $user->id)->count(),
                 'accepted' => \App\Models\ProffiApplication::where('specialist_id', $user->id)->where('status', 'accepted')->count(),
+                'completed' => \App\Models\ProffiApplication::where('specialist_id', $user->id)->whereIn('status', ['completed', 'accepted'])->count(),
                 'active_chats' => \App\Models\ProffiChat::where('specialist_id', $user->id)->count(),
-                'rating' => 0.0,
-                'reviews_count' => 0,
+                'rating' => $rating['rating'],
+                'reviews_count' => $rating['reviews_count'],
             ];
         }
         return [
@@ -343,6 +346,7 @@ class AuthController extends Controller
             'open' => \App\Models\ProffiTask::where('customer_id', $user->id)->where('status', 'open')->count(),
             'open_tasks' => \App\Models\ProffiTask::where('customer_id', $user->id)->where('status', 'open')->count(),
             'in_progress' => \App\Models\ProffiTask::where('customer_id', $user->id)->where('status', 'in_progress')->count(),
+            'completed' => \App\Models\ProffiTask::where('customer_id', $user->id)->where('status', 'completed')->count(),
             'active_chats' => \App\Models\ProffiChat::where('customer_id', $user->id)->count(),
         ];
     }

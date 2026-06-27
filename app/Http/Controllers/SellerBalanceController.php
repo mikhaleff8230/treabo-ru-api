@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\SellerBalance;
 use App\Models\BalanceDeposit;
+use App\Models\ProffiApplication;
 use App\Models\TreaboResponseSetting;
 use App\Services\YooKassa\YooKassaService;
 use App\Services\YooKassa\YooKassaConfig;
@@ -47,6 +48,79 @@ class SellerBalanceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Ошибка при получении баланса'
+            ], 500);
+        }
+    }
+
+    public function transactions(Request $request)
+    {
+        try {
+            $user = $request->user() ?: Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.'
+                ], 401);
+            }
+
+            $deposits = BalanceDeposit::where('seller_id', $user->id)
+                ->latest()
+                ->limit(50)
+                ->get()
+                ->map(function (BalanceDeposit $deposit) {
+                    $isSucceeded = $deposit->status === 'succeeded';
+                    $date = $deposit->paid_at ?: $deposit->reported_at ?: $deposit->created_at;
+
+                    return [
+                        'id' => 'deposit_' . $deposit->id,
+                        'type' => 'deposit',
+                        'title' => $isSucceeded ? 'Пополнение баланса' : 'Пополнение ожидает проверки',
+                        'description' => $deposit->payment_id,
+                        'status' => $deposit->status,
+                        'amount' => (float) $deposit->amount,
+                        'direction' => 'income',
+                        'currency' => 'RUB',
+                        'created_at' => optional($date)->toIso8601String(),
+                    ];
+                });
+
+            $applications = ProffiApplication::with('task')
+                ->where('specialist_id', $user->id)
+                ->where('response_fee_mdl', '>', 0)
+                ->latest()
+                ->limit(50)
+                ->get()
+                ->map(function (ProffiApplication $application) {
+                    return [
+                        'id' => 'application_' . $application->id,
+                        'type' => 'application_fee',
+                        'title' => 'Отклик на задание',
+                        'description' => $application->task?->title,
+                        'status' => $application->status,
+                        'amount' => -1 * (float) ($application->response_fee_mdl ?? 0),
+                        'direction' => 'expense',
+                        'currency' => 'RUB',
+                        'task_id' => $application->task_id ? (string) $application->task_id : null,
+                        'task_title' => $application->task?->title,
+                        'created_at' => optional($application->created_at)->toIso8601String(),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $deposits
+                    ->concat($applications)
+                    ->sortByDesc('created_at')
+                    ->take(100)
+                    ->values(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('SellerBalanceController@transactions: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Не удалось загрузить историю операций'
             ], 500);
         }
     }
@@ -234,7 +308,7 @@ class SellerBalanceController extends Controller
                     'payment_id' => $deposit->payment_id,
                     'deposit_id' => $deposit->id,
                     'amount' => $amount,
-                    'currency' => 'MDL',
+                    'currency' => 'RUB',
                     'expires_at' => now()->addHours($expiresHours)->toIso8601String(),
                 ]);
             }
@@ -434,7 +508,7 @@ class SellerBalanceController extends Controller
                 'data' => [
                     'deposit_id' => $deposit->id,
                     'amount' => (float) $deposit->amount,
-                    'currency' => 'MDL',
+                    'currency' => 'RUB',
                     'reported_at' => optional($deposit->reported_at)->toIso8601String(),
                 ],
             ]);

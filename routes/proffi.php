@@ -13,6 +13,7 @@ use App\Http\Controllers\Proffi\CategoryController;
 use App\Http\Controllers\Proffi\ChatController;
 use App\Http\Controllers\Proffi\JobAttributeController;
 use App\Http\Controllers\Proffi\SpecialistController;
+use App\Http\Controllers\Proffi\SpecialistReviewController;
 use App\Http\Controllers\Proffi\TaskController;
 use App\Http\Controllers\SellerBalanceController;
 use App\Http\Controllers\Proffi\UploadController;
@@ -63,6 +64,7 @@ Route::get('/tasks/{job}/attributes', [JobAttributeController::class, 'show'])->
 Route::get('/tasks/{task}', [TaskController::class, 'show'])->whereNumber('task');
 Route::get('/specialists', [SpecialistController::class, 'index']);
 Route::get('/specialists/{user}', [SpecialistController::class, 'show'])->whereNumber('user');
+Route::get('/specialists/{user}/reviews', [SpecialistReviewController::class, 'index'])->whereNumber('user');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/uploads', [UploadController::class, 'store']);
@@ -79,8 +81,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/applications/mine', [ApplicationController::class, 'mine']);
     Route::post('/applications/{application}/accept', [ApplicationController::class, 'accept']);
+    Route::post('/specialists/{user}/reviews', [SpecialistReviewController::class, 'store'])->whereNumber('user');
 
     Route::get('/balance', [SellerBalanceController::class, 'get']);
+    Route::get('/balance/transactions', [SellerBalanceController::class, 'transactions']);
     Route::post('/balance/deposit', [SellerBalanceController::class, 'deposit']);
     Route::post('/balance/deposit/report', [SellerBalanceController::class, 'reportManualPayment']);
     Route::get('/balance/check-pending', [SellerBalanceController::class, 'checkPending']);

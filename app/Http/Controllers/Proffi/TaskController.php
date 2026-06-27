@@ -7,32 +7,40 @@ use App\Http\Controllers\Proffi\Concerns\MapsProffiUsers;
 use App\Models\ProffiCategory;
 use App\Models\ProffiTask;
 use App\Models\TreaboResponseSetting;
+use App\Services\Proffi\ProffiCategorySearchService;
 use Illuminate\Http\Request;
 
 class TaskController extends Controller
 {
     use MapsProffiUsers;
 
+    public function __construct(
+        private readonly ProffiCategorySearchService $categorySearch,
+    ) {
+    }
+
     public function index(Request $request)
     {
         $query = ProffiTask::with('customer.profile')->where('status', 'open')->latest();
 
-        if ($request->filled('category')) {
-            $category = (string) $request->query('category');
-            $query->where(fn ($inner) => $inner
-                ->where('category', $category)
-                ->orWhere('category_id', $category)
-            );
+        $categoryIds = $this->categorySearch->resolveCategoryIds(
+            $request->query('category_id') ?: ($request->filled('category') ? (string) $request->query('category') : null),
+            $request->filled('category_id') ? null : ($request->filled('q') ? (string) $request->query('q') : null),
+        );
+
+        if ($categoryIds) {
+            $query->where(function ($inner) use ($categoryIds) {
+                $inner->whereIn('category_id', $categoryIds)->orWhereIn('category', $categoryIds);
+            });
+        } elseif ($request->filled('q')) {
+            $q = (string) $request->query('q');
+            $query->where(function ($inner) use ($q) {
+                $inner->where('title', 'like', "%$q%")->orWhere('description', 'like', "%$q%");
+            });
         }
-        if ($request->filled('category_id')) {
-            $query->where('category_id', $request->query('category_id'));
-        }
+
         if ($request->filled('city')) {
             $query->where('city', 'like', '%' . $request->query('city') . '%');
-        }
-        if ($request->filled('q')) {
-            $q = $request->query('q');
-            $query->where(fn ($inner) => $inner->where('title', 'like', "%$q%")->orWhere('description', 'like', "%$q%"));
         }
 
         return $query->limit(100)->get()->map(fn (ProffiTask $task) => $this->mapTask($task))->values();
