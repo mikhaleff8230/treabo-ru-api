@@ -14,8 +14,8 @@ echo "==> Install deps and build Next.js in reusable node container"
 cd "$API_DIR"
 docker-compose -f "$COMPOSE_FILE" run --rm --no-deps shop sh -lc \
   "apk add --no-cache libc6-compat python3 make g++ >/dev/null \
-  && npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund \
-  && npm run build \
+  && NODE_ENV=development npm install --include=dev --legacy-peer-deps --ignore-scripts --no-audit --no-fund \
+  && NODE_ENV=development npm run build \
   && test -f .next/BUILD_ID"
 
 echo "==> Restart shop only"

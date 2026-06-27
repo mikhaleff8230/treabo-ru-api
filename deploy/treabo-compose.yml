@@ -91,9 +91,9 @@ services:
       - "127.0.0.1:${TREABO_SHOP_HOST_PORT:-3010}:3000"
     command: >
       sh -lc "apk add --no-cache libc6-compat python3 make g++ >/dev/null
-      && if [ ! -d node_modules/next ]; then npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund || npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund; fi
-      && if [ ! -f .next/BUILD_ID ]; then npm run build; fi
-      && npm run start"
+      && if [ ! -d node_modules/next ]; then NODE_ENV=development npm ci --include=dev --legacy-peer-deps --ignore-scripts --no-audit --no-fund || NODE_ENV=development npm install --include=dev --legacy-peer-deps --ignore-scripts --no-audit --no-fund; fi
+      && if [ ! -f .next/BUILD_ID ]; then NODE_ENV=development npm run build; fi
+      && NODE_ENV=production npm run start"
 
   admin:
     build:
