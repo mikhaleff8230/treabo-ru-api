@@ -68,6 +68,10 @@ return [
         'default_price_mdl' => env('TREABO_DEFAULT_RESPONSE_PRICE_MDL', 15),
     ],
 
+    'treabo' => [
+        'phone_otp_enabled' => env('TREABO_PHONE_OTP_ENABLED', false),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Маркетплейс: физическая доставка и логистика

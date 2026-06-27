@@ -35,6 +35,8 @@ Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'registerEmail']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/verify', [AuthController::class, 'verify']);
+    Route::post('/phone/send-otp', [AuthController::class, 'sendPhoneOtp']);
+    Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
     Route::get('/oauth/{provider}/redirect', [AuthController::class, 'oauthRedirect']);
     Route::get('/oauth/{provider}/callback', [AuthController::class, 'oauthCallback']);
 
