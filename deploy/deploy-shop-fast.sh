@@ -19,6 +19,7 @@ docker-compose -f "$COMPOSE_FILE" run --rm --no-deps shop sh -lc \
   && test -f .next/BUILD_ID"
 
 echo "==> Restart shop only"
+docker-compose -f "$COMPOSE_FILE" rm -sf shop || true
 docker-compose -f "$COMPOSE_FILE" up -d --no-deps shop
 
 echo "==> Check shop"
