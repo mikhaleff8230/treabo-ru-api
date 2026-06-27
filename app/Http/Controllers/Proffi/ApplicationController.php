@@ -17,7 +17,7 @@ class ApplicationController extends Controller
     public function preview(Request $request, ProffiTask $task)
     {
         if ((int) $task->customer_id === (int) $request->user()->id) {
-            return response()->json(['detail' => 'You cannot apply to your own task'], 400);
+            return response()->json(['detail' => 'Нельзя откликнуться на свою заявку'], 400);
         }
 
         if ($task->status !== 'open') {
@@ -30,7 +30,7 @@ class ApplicationController extends Controller
     public function store(Request $request, ProffiTask $task)
     {
         if ((int) $task->customer_id === (int) $request->user()->id) {
-            return response()->json(['detail' => 'You cannot apply to your own task'], 400);
+            return response()->json(['detail' => 'Нельзя откликнуться на свою заявку'], 400);
         }
         if ($task->status !== 'open') {
             return response()->json(['detail' => 'Task is not open'], 400);
