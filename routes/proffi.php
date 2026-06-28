@@ -67,7 +67,7 @@ $proffiAdminRoutes = function () {
     Route::delete('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'destroy']);
 };
 
-Route::prefix('proffi')->group(function () {
+Route::prefix('proffi')->group(function () use ($proffiAdminRoutes) {
 Route::prefix('auth')->group(function () {
     Route::post('/check-phone', [AuthController::class, 'checkPhone']);
     Route::post('/register-phone', [AuthController::class, 'registerPhone']);
