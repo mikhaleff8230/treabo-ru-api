@@ -30,6 +30,43 @@ Route::get('/proffi-health', function () {
     ]);
 });
 
+$proffiAdminRoutes = function () {
+    Route::get('/stats', [AdminController::class, 'stats']);
+    Route::get('/users', [AdminController::class, 'users']);
+    Route::get('/customers', [AdminController::class, 'customers']);
+    Route::get('/specialists', [AdminController::class, 'specialists']);
+    Route::post('/specialists/{user}/balance/virtual-deposit', [AdminController::class, 'virtualBalanceDeposit']);
+    Route::post('/users', [AdminController::class, 'createUser']);
+    Route::put('/users/{user}', [AdminController::class, 'updateUser']);
+    Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
+
+    Route::get('/categories', [AdminController::class, 'categories']);
+    Route::post('/categories', [AdminController::class, 'createCategory']);
+    Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
+    Route::delete('/categories/{id}', [AdminController::class, 'deleteCategory']);
+
+    Route::get('/filters', [AdminController::class, 'filters']);
+    Route::post('/filters', [AdminController::class, 'createFilter']);
+    Route::put('/filters/{id}', [AdminController::class, 'updateFilter']);
+    Route::delete('/filters/{id}', [AdminController::class, 'deleteFilter']);
+
+    Route::get('/response-settings', [AdminController::class, 'responseSettings']);
+    Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
+    Route::get('/balance-deposits', [AdminController::class, 'balanceDeposits']);
+
+    Route::get('/tasks', [AdminController::class, 'tasks']);
+    Route::post('/tasks', [AdminController::class, 'createTask']);
+    Route::put('/tasks/{task}', [AdminController::class, 'updateTask']);
+    Route::delete('/tasks/{task}', [AdminController::class, 'deleteTask']);
+    Route::get('/applications', [AdminController::class, 'applications']);
+    Route::get('/chats', [AdminController::class, 'chats']);
+    Route::get('/chats/{chat}/messages', [AdminController::class, 'chatMessages']);
+    Route::get('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'index']);
+    Route::post('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'store']);
+    Route::put('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'update']);
+    Route::delete('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'destroy']);
+};
+
 Route::prefix('proffi')->group(function () {
 Route::prefix('auth')->group(function () {
     Route::post('/check-phone', [AuthController::class, 'checkPhone']);
@@ -96,40 +133,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/chats/{chat}/messages', [ChatController::class, 'send']);
 });
 
-Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
-    Route::get('/stats', [AdminController::class, 'stats']);
-    Route::get('/users', [AdminController::class, 'users']);
-    Route::get('/customers', [AdminController::class, 'customers']);
-    Route::get('/specialists', [AdminController::class, 'specialists']);
-    Route::post('/specialists/{user}/balance/virtual-deposit', [AdminController::class, 'virtualBalanceDeposit']);
-    Route::post('/users', [AdminController::class, 'createUser']);
-    Route::put('/users/{user}', [AdminController::class, 'updateUser']);
-    Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
-
-    Route::get('/categories', [AdminController::class, 'categories']);
-    Route::post('/categories', [AdminController::class, 'createCategory']);
-    Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
-    Route::delete('/categories/{id}', [AdminController::class, 'deleteCategory']);
-
-    Route::get('/filters', [AdminController::class, 'filters']);
-    Route::post('/filters', [AdminController::class, 'createFilter']);
-    Route::put('/filters/{id}', [AdminController::class, 'updateFilter']);
-    Route::delete('/filters/{id}', [AdminController::class, 'deleteFilter']);
-
-    Route::get('/response-settings', [AdminController::class, 'responseSettings']);
-    Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
-    Route::get('/balance-deposits', [AdminController::class, 'balanceDeposits']);
-
-    Route::get('/tasks', [AdminController::class, 'tasks']);
-    Route::post('/tasks', [AdminController::class, 'createTask']);
-    Route::put('/tasks/{task}', [AdminController::class, 'updateTask']);
-    Route::delete('/tasks/{task}', [AdminController::class, 'deleteTask']);
-    Route::get('/applications', [AdminController::class, 'applications']);
-    Route::get('/chats', [AdminController::class, 'chats']);
-    Route::get('/chats/{chat}/messages', [AdminController::class, 'chatMessages']);
-    Route::get('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'index']);
-    Route::post('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'store']);
-    Route::put('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'update']);
-    Route::delete('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'destroy']);
+Route::middleware(ProffiAdminToken::class)->prefix('admin')->group($proffiAdminRoutes);
 });
-});
+
+Route::middleware(ProffiAdminToken::class)->prefix('admin')->group($proffiAdminRoutes);
