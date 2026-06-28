@@ -7,6 +7,7 @@ use App\Http\Controllers\Proffi\Concerns\MapsProffiUsers;
 use App\Models\ProffiCategory;
 use App\Models\ProffiApplication;
 use App\Models\BalanceDeposit;
+use App\Models\SellerBalance;
 use App\Models\ProffiChat;
 use App\Models\ProffiFilter;
 use App\Models\ProffiMessage;
@@ -63,8 +64,52 @@ class AdminController extends Controller
             ->latest()
             ->limit(500)
             ->get()
-            ->map(fn (User $user) => $this->publicUser($user))
+            ->map(function (User $user) {
+                $data = $this->publicUser($user);
+                $balance = SellerBalance::getOrCreate($user->id);
+                $data['balance'] = (float) $balance->balance;
+                $data['total_deposited'] = (float) $balance->total_deposited;
+                $data['total_spent'] = (float) $balance->total_spent;
+
+                return $data;
+            })
             ->values();
+    }
+
+    public function virtualBalanceDeposit(Request $request, User $user)
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01'],
+        ]);
+
+        if (!$user->hasPermissionTo(Permission::STORE_OWNER)) {
+            return response()->json(['detail' => 'Пользователь не является мастером'], 400);
+        }
+
+        $amount = (float) $data['amount'];
+        $balance = SellerBalance::getOrCreate($user->id);
+        $oldBalance = (float) $balance->balance;
+        $balance->deposit($amount, 'Виртуальное пополнение баланса администратором');
+
+        $deposit = BalanceDeposit::create([
+            'seller_id' => $user->id,
+            'amount' => $amount,
+            'payment_id' => 'virtual_' . time() . '_' . $user->id . '_' . uniqid(),
+            'status' => 'succeeded',
+            'paid_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Баланс успешно пополнен',
+            'data' => [
+                'seller_id' => (string) $user->id,
+                'amount' => $amount,
+                'old_balance' => $oldBalance,
+                'new_balance' => (float) $balance->balance,
+                'deposit_id' => $deposit->id,
+            ],
+        ]);
     }
 
     public function createUser(Request $request)

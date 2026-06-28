@@ -314,6 +314,13 @@ class SellerBalanceController extends Controller
             }
 
             if ($request->payment_method === 'yookassa') {
+                if (!$amount || $amount < 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Укажите сумму пополнения'
+                    ], 400);
+                }
+
                 // Создаем платеж в YooKassa
                 $shopId = config('services.yookassa.shop_id');
                 $secretKey = config('services.yookassa.secret_key');
@@ -330,7 +337,8 @@ class SellerBalanceController extends Controller
                 $config = new YooKassaConfig($shopId, $secretKey, $isTest);
                 $service = new YooKassaService($config);
 
-                $returnUrl = config('shop.dashboard_url') . '/dashboard/billing?deposit=success';
+                $shopUrl = rtrim((string) env('SHOP_URL', config('app.url')), '/');
+                $returnUrl = $shopUrl . '/treabo/balance?deposit=success';
                 $description = "Пополнение баланса на сумму {$amount} ₽";
 
                 // Формируем receipt для ЮKassa (54-ФЗ) - обязателен для боевого режима

@@ -30,6 +30,7 @@ Route::get('/proffi-health', function () {
     ]);
 });
 
+Route::prefix('proffi')->group(function () {
 Route::prefix('auth')->group(function () {
     Route::post('/check-phone', [AuthController::class, 'checkPhone']);
     Route::post('/register-phone', [AuthController::class, 'registerPhone']);
@@ -100,6 +101,7 @@ Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
     Route::get('/users', [AdminController::class, 'users']);
     Route::get('/customers', [AdminController::class, 'customers']);
     Route::get('/specialists', [AdminController::class, 'specialists']);
+    Route::post('/specialists/{user}/balance/virtual-deposit', [AdminController::class, 'virtualBalanceDeposit']);
     Route::post('/users', [AdminController::class, 'createUser']);
     Route::put('/users/{user}', [AdminController::class, 'updateUser']);
     Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
@@ -129,4 +131,5 @@ Route::middleware(ProffiAdminToken::class)->prefix('admin')->group(function () {
     Route::post('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'store']);
     Route::put('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'update']);
     Route::delete('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'destroy']);
+});
 });

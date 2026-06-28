@@ -907,10 +907,53 @@ class GeoLocationService
     }
 
     /**
+     * Обратный геокодинг: DaData (основной) → Yandex (запасной).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function reverseGeocode(float $lat, float $lng): ?array
+    {
+        if ($this->dadataClient) {
+            try {
+                $dadata = $this->getDaDataLocationByCoordinates($lat, $lng);
+                if ($dadata) {
+                    return array_merge($dadata, [
+                        'lat' => $dadata['lat'] ?? $lat,
+                        'lng' => $dadata['lon'] ?? $lng,
+                        'address' => $dadata['full_address'] ?? null,
+                        'source' => 'dadata',
+                        'provider' => 'dadata',
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::warning('GeoLocationService: DaData reverse geocode failed', [
+                    'lat' => $lat,
+                    'lng' => $lng,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $yandex = $this->getYandexLocation($lat, $lng);
+        if ($yandex) {
+            return array_merge($yandex, [
+                'lat' => $lat,
+                'lng' => $lng,
+                'full_address' => $yandex['yandex_address'] ?? null,
+                'address' => $yandex['yandex_address'] ?? null,
+                'source' => 'yandex',
+                'provider' => 'yandex',
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
      * Поиск полных адресов через DaData API (город, улица, дом)
      * Документация: https://dadata.ru/api/suggest/address/
      */
-    public function searchAddresses(string $query, int $count = 10): array
+    public function searchAddresses(string $query, int $count = 10, ?string $city = null): array
     {
         try {
             if (!$this->dadataClient || !$this->dadataApiKey || !$this->dadataSecretKey) {
@@ -951,10 +994,13 @@ class GeoLocationService
                     'Accept' => 'application/json',
                     'Authorization' => 'Token ' . $this->dadataApiKey
                 ])
-                ->post($url, [
+                ->post($url, array_filter([
                     'query' => $query,
-                    'count' => min($count, 20) // Максимум 20 по документации
-                ]);
+                    'count' => min($count, 20),
+                    'locations' => $city
+                        ? [['city' => $city]]
+                        : [['country_iso_code' => 'RU']],
+                ]));
             
             if (!$response->successful()) {
                 Log::error('DaData suggest: API request failed', [
@@ -1133,11 +1179,11 @@ class GeoLocationService
     }
 
     /**
-     * Получить местоположение по координатам через Яндекс.Геокодер
+     * Получить местоположение по координатам (обратная совместимость).
      */
     public function getLocationByCoordinates(float $lat, float $lon): ?array
     {
-        return $this->getYandexLocation($lat, $lon);
+        return $this->reverseGeocode($lat, $lon);
     }
 
     /**

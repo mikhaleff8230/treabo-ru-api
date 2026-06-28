@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use App\Http\Controllers\CustomYooKassaOrderController;
+use App\Http\Controllers\GeoController;
 use App\Http\Controllers\PvzController;
 use Marvel\Http\Controllers\OrderController;
 use Marvel\Http\Controllers\PlaceController;
@@ -156,6 +157,16 @@ Route::get('/test-yookassa', function() {
 // Маршруты плейсов перенесены в Marvel Routes
 
 // Тестовые маршруты удалены - используем Marvel API
+
+// Нормализованные geo/address endpoints для Treabo (web + mobile)
+Route::prefix('geo')->group(function () {
+    Route::match(['get', 'post'], '/detect', [GeoController::class, 'detectByIp']);
+    Route::get('/reverse', [GeoController::class, 'reverseGeocode']);
+});
+
+Route::get('/addresses/search', [GeoController::class, 'searchAddresses']);
+Route::post('/address/save', [GeoController::class, 'saveAddress']);
+Route::get('/address/saved', [GeoController::class, 'getSavedAddress']);
 
 // GeoIP маршруты
 Route::prefix('geoip')->group(function () {
@@ -1493,40 +1504,8 @@ Route::get('/kladr/search', function (Request $request) {
     }
 });
 
-// API для получения адреса по координатам через Яндекс.Геокодер
-Route::get('/geocoder/reverse', function (Request $request) {
-    $lat = $request->get('lat');
-    $lon = $request->get('lon');
-    
-    if (!$lat || !$lon) {
-        return response()->json([
-            'error' => 'Latitude and longitude are required',
-            'message' => 'Параметры lat и lon обязательны'
-        ], 400);
-    }
-    
-    try {
-        $geoService = app(\App\Services\GeoLocationService::class);
-        $result = $geoService->getLocationByCoordinates((float)$lat, (float)$lon);
-        
-        if ($result) {
-            return response()->json([
-                'success' => true,
-                'address' => $result
-            ]);
-        } else {
-            return response()->json([
-                'success' => false,
-                'message' => 'Адрес не найден'
-            ]);
-        }
-    } catch (\Exception $e) {
-        return response()->json([
-            'error' => 'Failed to get address',
-            'message' => $e->getMessage()
-        ], 500);
-    }
-});
+// API для получения адреса по координатам (DaData → Yandex)
+Route::get('/geocoder/reverse', [GeoController::class, 'reverseGeocode']);
 
 // YML Feed для Яндекс.Маркета
 Route::get('/yml-feed', [YmlFeedController::class, 'index']);

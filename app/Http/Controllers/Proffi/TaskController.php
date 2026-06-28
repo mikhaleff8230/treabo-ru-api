@@ -21,7 +21,7 @@ class TaskController extends Controller
 
     public function index(Request $request)
     {
-        $query = ProffiTask::with('customer.profile')->where('status', 'open')->latest();
+        $query = ProffiTask::with('customer.profile')->where('status', 'open');
 
         $categoryIds = $this->categorySearch->resolveCategoryIds(
             $request->query('category_id') ?: ($request->filled('category') ? (string) $request->query('category') : null),
@@ -43,7 +43,48 @@ class TaskController extends Controller
             $query->where('city', 'like', '%' . $request->query('city') . '%');
         }
 
-        return $query->limit(100)->get()->map(fn (ProffiTask $task) => $this->mapTask($task))->values();
+        if ($request->filled('budget_min')) {
+            $query->where('budget', '>=', (int) $request->query('budget_min'));
+        }
+
+        if ($request->filled('budget_max')) {
+            $query->where('budget', '<=', (int) $request->query('budget_max'));
+        }
+
+        $hasBbox = $request->filled('sw_lat')
+            && $request->filled('sw_lng')
+            && $request->filled('ne_lat')
+            && $request->filled('ne_lng');
+
+        if ($hasBbox) {
+            $swLat = (float) $request->query('sw_lat');
+            $swLng = (float) $request->query('sw_lng');
+            $neLat = (float) $request->query('ne_lat');
+            $neLng = (float) $request->query('ne_lng');
+
+            $query->whereNotNull('lat')
+                ->whereNotNull('lng')
+                ->whereBetween('lat', [min($swLat, $neLat), max($swLat, $neLat)])
+                ->whereBetween('lng', [min($swLng, $neLng), max($swLng, $neLng)]);
+        }
+
+        $userLat = $request->filled('lat') ? (float) $request->query('lat') : null;
+        $userLng = $request->filled('lng') ? (float) $request->query('lng') : null;
+        $sort = (string) $request->query('sort', '');
+
+        $tasks = $query->latest()->limit($hasBbox ? 200 : 100)->get();
+
+        $results = $tasks
+            ->map(fn (ProffiTask $task) => $this->mapTask($task, $userLat, $userLng))
+            ->values();
+
+        if ($userLat !== null && $userLng !== null && ($sort === 'distance' || $sort === '')) {
+            $results = $results
+                ->sortBy(fn (array $task) => $task['distance_km'] ?? PHP_FLOAT_MAX)
+                ->values();
+        }
+
+        return $results;
     }
 
     public function store(Request $request)
@@ -58,8 +99,8 @@ class TaskController extends Controller
             'budget' => ['nullable', 'integer', 'min:0'],
             'response_price_mdl' => ['nullable', 'integer', 'min:0'],
             'deadline' => ['nullable', 'string', 'max:64'],
-            'lat' => ['nullable', 'numeric'],
-            'lng' => ['nullable', 'numeric'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
             'photos' => ['nullable', 'array'],
         ]);
 
@@ -95,9 +136,12 @@ class TaskController extends Controller
             ->values();
     }
 
-    public function show(ProffiTask $task)
+    public function show(Request $request, ProffiTask $task)
     {
-        return $this->mapTask($task->load('customer.profile'));
+        $userLat = $request->filled('lat') ? (float) $request->query('lat') : null;
+        $userLng = $request->filled('lng') ? (float) $request->query('lng') : null;
+
+        return $this->mapTask($task->load('customer.profile'), $userLat, $userLng);
     }
 
     public function destroy(Request $request, ProffiTask $task)
@@ -160,8 +204,13 @@ class TaskController extends Controller
         ];
     }
 
-    public function mapTask(ProffiTask $task): array
+    public function mapTask(ProffiTask $task, ?float $userLat = null, ?float $userLng = null): array
     {
+        $distance = null;
+        if ($userLat !== null && $userLng !== null && $task->lat !== null && $task->lng !== null) {
+            $distance = round($this->haversineKm($userLat, $userLng, (float) $task->lat, (float) $task->lng), 1);
+        }
+
         return [
             'id' => (string) $task->id,
             'title' => $task->title,
@@ -180,8 +229,20 @@ class TaskController extends Controller
             'photos' => $task->photos ?: [],
             'lat' => $task->lat,
             'lng' => $task->lng,
+            'distance_km' => $distance,
             'created_at' => optional($task->created_at)->toIso8601String(),
             'updated_at' => optional($task->updated_at)->toIso8601String(),
         ];
+    }
+
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadius = 6371;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return $earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 }
