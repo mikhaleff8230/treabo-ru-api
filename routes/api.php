@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -49,33 +50,7 @@ Route::middleware('auth:api')->get('/user', function (Request $request) {
 
 // Broadcasting auth endpoint for Laravel WebSockets
 Route::middleware('auth:sanctum')->post('/broadcasting/auth', function (Request $request) {
-    $channelName = $request->input('channel_name');
-    $socketId = $request->input('socket_id');
-    
-    if (!$channelName || !$socketId) {
-        return response()->json(['error' => 'Invalid request'], 400);
-    }
-    
-    $user = $request->user();
-    
-    // For Laravel WebSockets, we need to return auth signature
-    // Using HMAC SHA256 with app secret
-    $appSecret = config('broadcasting.connections.pusher.secret', 'local');
-    $appKey = config('broadcasting.connections.pusher.key', 'local');
-    
-    // Generate signature
-    $signature = hash_hmac('sha256', $socketId . ':' . $channelName, $appSecret);
-    
-    return response()->json([
-        'auth' => $appKey . ':' . $signature,
-        'channel_data' => json_encode([
-            'user_id' => (string) $user->id,
-            'user_info' => [
-                'name' => $user->name,
-                'email' => $user->email,
-            ],
-        ]),
-    ]);
+    return Broadcast::auth($request);
 });
 
 // Маршрут для получения CSRF-токена

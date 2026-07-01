@@ -33,3 +33,13 @@ Broadcast::channel('conversation.{id}', function ($user, $id) {
     // Check if user is in conversation_user pivot table
     return $conversation->users()->where('user_id', $user->id)->exists();
 });
+
+Broadcast::channel('proffi.chat.{chatId}', function ($user, $chatId) {
+    $chat = \App\Models\ProffiChat::find($chatId);
+    if (!$chat) {
+        return false;
+    }
+
+    return (int) $chat->customer_id === (int) $user->id
+        || (int) $chat->specialist_id === (int) $user->id;
+});

@@ -10,6 +10,14 @@ class ProffiMessage extends Model
 {
     protected $table = 'proffi_messages';
     protected $guarded = [];
+    protected $casts = [
+        'read_at' => 'datetime',
+        'delivered_at' => 'datetime',
+        'metadata' => 'array',
+    ];
+    protected $attributes = [
+        'type' => 'text',
+    ];
 
     public function chat(): BelongsTo
     {

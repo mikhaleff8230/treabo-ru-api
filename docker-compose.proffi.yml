@@ -8,6 +8,7 @@ services:
       - .env.proffi-docker
     environment:
       COMPOSER_PROCESS_TIMEOUT: "1800"
+      PUSHER_HOST: websockets
     ports:
       - "8001:8000"
     extra_hosts:
@@ -52,6 +53,23 @@ services:
     image: redis:7-alpine
     ports:
       - "6380:6379"
+
+  websockets:
+    build:
+      context: .
+      dockerfile: Dockerfile.proffi
+    working_dir: /var/www/html
+    env_file:
+      - .env.proffi-docker
+    ports:
+      - "6001:6001"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      app:
+        condition: service_started
+    command: >
+      sh -lc "php artisan websockets:serve --host=0.0.0.0 --port=6001"
 
 volumes:
   composer_cache:

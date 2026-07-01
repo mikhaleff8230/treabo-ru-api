@@ -131,6 +131,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/chats/{chat}', [ChatController::class, 'show']);
     Route::get('/chats/{chat}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{chat}/messages', [ChatController::class, 'send']);
+    Route::post('/chats/{chat}/read', [ChatController::class, 'read']);
+    Route::post('/chats/{chat}/typing', [ChatController::class, 'typing']);
+    Route::post('/presence/heartbeat', [ChatController::class, 'presenceHeartbeat']);
 });
 
 Route::middleware(ProffiAdminToken::class)->prefix('admin')->group($proffiAdminRoutes);

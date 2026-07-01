@@ -11,7 +11,13 @@ class ProffiChat extends Model
 {
     protected $table = 'proffi_chats';
     protected $guarded = [];
-    protected $casts = ['last_message_at' => 'datetime'];
+    protected $casts = [
+        'last_message_at' => 'datetime',
+        'customer_last_read_at' => 'datetime',
+        'specialist_last_read_at' => 'datetime',
+        'customer_typing_at' => 'datetime',
+        'specialist_typing_at' => 'datetime',
+    ];
 
     public function task(): BelongsTo
     {
