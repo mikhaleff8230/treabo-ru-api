@@ -12,6 +12,7 @@ use App\Models\ProffiChat;
 use App\Models\ProffiMessage;
 use App\Models\ProffiUserPresence;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Marvel\Database\Models\User;
 
@@ -67,28 +68,38 @@ class ChatController extends Controller
             return response()->json(['detail' => 'Forbidden'], 403);
         }
 
-        $data = $request->validate(['text' => ['required', 'string']]);
+        $data = $request->validate([
+            'text' => ['nullable', 'string', 'required_without:metadata'],
+            'type' => ['nullable', 'string', 'in:text,image,file'],
+            'metadata' => ['nullable', 'array'],
+        ]);
         $senderId = (int) $request->user()->id;
         $now = now();
+        $type = $data['type'] ?? 'text';
+        $text = trim((string) ($data['text'] ?? ''));
+        if ($text === '') {
+            $text = $type === 'image' ? 'Фото' : 'Файл';
+        }
 
         $message = $chat->messages()->create([
             'sender_id' => $senderId,
-            'text' => $data['text'],
-            'type' => 'text',
+            'text' => $text,
+            'type' => $type,
+            'metadata' => $data['metadata'] ?? null,
             'delivered_at' => $now,
         ]);
 
         $chat->update([
-            'last_message' => $data['text'],
+            'last_message' => $text,
             'last_message_at' => $now,
         ]);
 
         $this->clearTyping($chat, $senderId);
 
         $chat->refresh();
-        broadcast(new MessageSent($message, $chat));
+        $this->safeBroadcast(new MessageSent($message, $chat));
 
-        $this->notifyRecipientByEmail($chat, $request->user(), $data['text']);
+        $this->notifyRecipientByEmail($chat, $request->user(), $text);
 
         return response()->json($this->mapMessage($message), 201);
     }
@@ -113,7 +124,7 @@ class ChatController extends Controller
             $chat->update(['specialist_last_read_at' => $now]);
         }
 
-        broadcast(new MessagesRead($chat->id, $userId, $now->toIso8601String()));
+        $this->safeBroadcast(new MessagesRead($chat->id, $userId, $now->toIso8601String()));
 
         return response()->json(['read_at' => $now->toIso8601String()]);
     }
@@ -135,7 +146,7 @@ class ChatController extends Controller
         }
 
         $typingAtIso = $typingAt?->toIso8601String() ?? now()->toIso8601String();
-        broadcast(new UserTyping($chat->id, $userId, $data['is_typing'], $typingAtIso));
+        $this->safeBroadcast(new UserTyping($chat->id, $userId, $data['is_typing'], $typingAtIso));
 
         return response()->json(['is_typing' => $data['is_typing']]);
     }
@@ -155,7 +166,7 @@ class ChatController extends Controller
             ->get(['id']);
 
         foreach ($chats as $chat) {
-            broadcast(new UserPresenceUpdated(
+            $this->safeBroadcast(new UserPresenceUpdated(
                 $chat->id,
                 $userId,
                 true,
@@ -174,6 +185,18 @@ class ChatController extends Controller
         $id = (int) $request->user()->id;
 
         return (int) $chat->customer_id === $id || (int) $chat->specialist_id === $id;
+    }
+
+    private function safeBroadcast(object $event): void
+    {
+        try {
+            broadcast($event);
+        } catch (\Throwable $exception) {
+            Log::warning('Proffi chat broadcast failed', [
+                'event' => get_class($event),
+                'message' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function clearTyping(ProffiChat $chat, int $userId): void
@@ -284,6 +307,7 @@ class ChatController extends Controller
             'user_id' => (string) $message->sender_id,
             'text' => $message->text,
             'type' => $message->type ?? 'text',
+            'metadata' => $message->metadata,
             'created_at' => optional($message->created_at)->toIso8601String(),
             'delivered_at' => optional($message->delivered_at)->toIso8601String(),
             'read_at' => optional($message->read_at)->toIso8601String(),
