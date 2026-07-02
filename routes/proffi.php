@@ -6,6 +6,8 @@ use App\Http\Controllers\Proffi\AdminController;
 use App\Http\Controllers\Api\AiJobDraftController;
 use App\Http\Controllers\Proffi\AiCategorySchemaController;
 use App\Http\Controllers\Proffi\AiChatKnowledgeController;
+use App\Http\Controllers\Proffi\ProffiWorkController;
+use App\Http\Controllers\Proffi\ProffiWorkQuestionController;
 use App\Http\Controllers\Proffi\ApplicationController;
 use App\Http\Controllers\Proffi\AuthController;
 use App\Http\Controllers\Proffi\CategoryAttributeController;
@@ -61,6 +63,16 @@ $proffiAdminRoutes = function () {
     Route::get('/applications', [AdminController::class, 'applications']);
     Route::get('/chats', [AdminController::class, 'chats']);
     Route::get('/chats/{chat}/messages', [AdminController::class, 'chatMessages']);
+    Route::get('/works', [ProffiWorkController::class, 'index']);
+    Route::post('/works', [ProffiWorkController::class, 'store']);
+    Route::put('/works/{work}', [ProffiWorkController::class, 'update']);
+    Route::delete('/works/{work}', [ProffiWorkController::class, 'destroy']);
+
+    Route::get('/questions', [ProffiWorkQuestionController::class, 'index']);
+    Route::post('/questions', [ProffiWorkQuestionController::class, 'store']);
+    Route::put('/questions/{question}', [ProffiWorkQuestionController::class, 'update']);
+    Route::delete('/questions/{question}', [ProffiWorkQuestionController::class, 'destroy']);
+
     Route::get('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'index']);
     Route::post('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'store']);
     Route::put('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'update']);

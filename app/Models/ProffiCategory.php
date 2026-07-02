@@ -21,4 +21,9 @@ class ProffiCategory extends Model
     {
         return $this->hasMany(CategoryAttribute::class, 'category_id', 'id');
     }
+
+    public function works(): HasMany
+    {
+        return $this->hasMany(ProffiWork::class, 'category_id', 'id');
+    }
 }

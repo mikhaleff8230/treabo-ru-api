@@ -41,6 +41,7 @@ class MessageSent implements ShouldBroadcastNow
                 'user_id' => (string) $this->message->sender_id,
                 'text' => $this->message->text,
                 'type' => $this->message->type ?? 'text',
+                'metadata' => $this->message->metadata,
                 'created_at' => optional($this->message->created_at)->toIso8601String(),
                 'delivered_at' => optional($this->message->delivered_at)->toIso8601String(),
                 'read_at' => optional($this->message->read_at)->toIso8601String(),

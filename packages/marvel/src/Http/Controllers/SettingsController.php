@@ -30,7 +30,17 @@ class SettingsController extends CoreController
      */
     public function index(Request $request)
     {
-        return $this->repository->getData($request->language);
+        $data = $this->repository->getData($request->language);
+
+        if (! $data) {
+            return response()->json([
+                'id' => null,
+                'language' => $request->language ?? DEFAULT_LANGUAGE,
+                'options' => (object) [],
+            ]);
+        }
+
+        return $data;
     }
 
     /**

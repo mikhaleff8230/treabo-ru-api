@@ -34,6 +34,11 @@ class SellerBalanceController extends Controller
             }
 
             $balance = SellerBalance::getOrCreate($user->id);
+            $settings = TreaboResponseSetting::current();
+            $freeLimit = max(0, (int) $settings->free_daily_limit);
+            $usedToday = ProffiApplication::where('specialist_id', $user->id)
+                ->whereBetween('created_at', [now()->startOfDay(), now()->endOfDay()])
+                ->count();
 
             return response()->json([
                 'success' => true,
@@ -41,6 +46,9 @@ class SellerBalanceController extends Controller
                     'balance' => (float) $balance->balance,
                     'total_deposited' => (float) $balance->total_deposited,
                     'total_spent' => (float) $balance->total_spent,
+                    'free_daily_limit' => $freeLimit,
+                    'free_used_today' => $usedToday,
+                    'free_remaining_today' => max(0, $freeLimit - $usedToday),
                 ]
             ]);
         } catch (\Exception $e) {

@@ -13,6 +13,7 @@ class ProffiTask extends Model
     protected $guarded = [];
     protected $casts = [
         'photos' => 'array',
+        'ai_details' => 'array',
         'lat' => 'float',
         'lng' => 'float',
         'budget' => 'integer',
@@ -27,6 +28,11 @@ class ProffiTask extends Model
     public function acceptedSpecialist(): BelongsTo
     {
         return $this->belongsTo(User::class, 'accepted_specialist_id');
+    }
+
+    public function work(): BelongsTo
+    {
+        return $this->belongsTo(ProffiWork::class, 'work_id');
     }
 
     public function applications(): HasMany

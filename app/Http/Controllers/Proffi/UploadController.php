@@ -75,7 +75,7 @@ class UploadController extends Controller
     private function publicUrl(string $disk, string $path): string
     {
         if ($disk === 'public') {
-            return url('/api/files/' . ltrim($path, '/'));
+            return url('/api/proffi/files/' . ltrim($path, '/'));
         }
 
         return Storage::disk($disk)->url($path);

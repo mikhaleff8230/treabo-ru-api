@@ -21,7 +21,7 @@ class TaskController extends Controller
 
     public function index(Request $request)
     {
-        $query = ProffiTask::with('customer.profile')->where('status', 'open');
+        $query = ProffiTask::with(['customer.profile', 'work'])->where('status', 'open');
 
         $categoryIds = $this->categorySearch->resolveCategoryIds(
             $request->query('category_id') ?: ($request->filled('category') ? (string) $request->query('category') : null),
@@ -94,6 +94,7 @@ class TaskController extends Controller
             'description' => ['required', 'string'],
             'category' => ['required'],
             'category_id' => ['nullable', 'string', 'exists:proffi_categories,id'],
+            'work_id' => ['nullable', 'integer', 'exists:proffi_works,id'],
             'city' => ['required', 'string', 'max:128'],
             'address' => ['nullable', 'string', 'max:512'],
             'budget' => ['nullable', 'integer', 'min:0'],
@@ -102,6 +103,7 @@ class TaskController extends Controller
             'lat' => ['nullable', 'numeric', 'between:-90,90'],
             'lng' => ['nullable', 'numeric', 'between:-180,180'],
             'photos' => ['nullable', 'array'],
+            'ai_details' => ['nullable', 'array'],
         ]);
 
         $categoryId = $data['category_id'] ?? null;
@@ -128,7 +130,7 @@ class TaskController extends Controller
 
     public function mine(Request $request)
     {
-        return ProffiTask::with('customer.profile')
+        return ProffiTask::with(['customer.profile', 'work'])
             ->where('customer_id', $request->user()->id)
             ->latest()
             ->get()
@@ -141,7 +143,7 @@ class TaskController extends Controller
         $userLat = $request->filled('lat') ? (float) $request->query('lat') : null;
         $userLng = $request->filled('lng') ? (float) $request->query('lng') : null;
 
-        return $this->mapTask($task->load('customer.profile'), $userLat, $userLng);
+        return $this->mapTask($task->load(['customer.profile', 'work']), $userLat, $userLng);
     }
 
     public function destroy(Request $request, ProffiTask $task)
@@ -217,6 +219,13 @@ class TaskController extends Controller
             'description' => $task->description,
             'category' => (string) $task->category,
             'category_id' => $task->category_id ? (string) $task->category_id : null,
+            'work_id' => $task->work_id ? (int) $task->work_id : null,
+            'work_title' => $task->work?->title,
+            'work' => $task->work ? [
+                'id' => (int) $task->work->id,
+                'title' => $task->work->title,
+                'description' => $task->work->description,
+            ] : null,
             'city' => $task->city,
             'address' => $task->address,
             'budget' => $task->budget,
@@ -227,6 +236,8 @@ class TaskController extends Controller
             'customer_name' => $task->customer?->name,
             'accepted_specialist_id' => $task->accepted_specialist_id ? (string) $task->accepted_specialist_id : null,
             'photos' => $task->photos ?: [],
+            'details' => $task->ai_details ?: null,
+            'ai_details' => $task->ai_details ?: null,
             'lat' => $task->lat,
             'lng' => $task->lng,
             'distance_km' => $distance,

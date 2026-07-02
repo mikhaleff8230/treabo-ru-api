@@ -89,10 +89,10 @@ class EnsureTreaboSettings extends Command
                     'name' => 'yookassa',
                     'title' => 'YooKassa',
                 ],
-                'yookassa' => [
-                    'success_url' => $shopUrl . '/orders',
-                    'cancel_url' => $shopUrl . '/checkout',
-                ],
+            ],
+            'yookassa' => [
+                'success_url' => $shopUrl . '/orders',
+                'cancel_url' => $shopUrl . '/checkout',
             ],
             'currencyOptions' => [
                 'formation' => 'ru-RU',

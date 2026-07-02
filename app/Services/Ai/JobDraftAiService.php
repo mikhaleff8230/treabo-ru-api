@@ -2,7 +2,9 @@
 
 namespace App\Services\Ai;
 
-use App\Models\AiChatKnowledge;
+use App\Models\ProffiCategory;
+use App\Models\ProffiWork;
+use App\Models\ProffiWorkQuestion;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -10,14 +12,6 @@ class JobDraftAiService
 {
     private const LANGUAGES = ['ru', 'unknown'];
     private const URGENCIES = ['urgent', 'this_week', 'this_month', 'flexible', 'unknown'];
-    private const CATEGORIES = [
-        'bathroom-renovation',
-        'tile-work',
-        'plumbing',
-        'electrical',
-        'air-conditioners',
-        'other',
-    ];
 
     private ?int $tokensUsed = null;
 
@@ -90,7 +84,7 @@ class JobDraftAiService
             throw new JobDraftAiException('OpenAI returned invalid JSON.');
         }
 
-        return $this->normalizeDraft($decoded);
+        return $this->normalizeDraft($decoded, $data);
     }
 
     public function model(): string
@@ -103,34 +97,222 @@ class JobDraftAiService
         return $this->tokensUsed;
     }
 
-    private function normalizeDraft(array $draft): array
+    private function normalizeDraft(array $draft, array $input = []): array
     {
         $language = $this->enum($draft['detected_language'] ?? 'unknown', self::LANGUAGES, 'unknown');
         $urgency = $this->enum($draft['urgency'] ?? 'unknown', self::URGENCIES, 'unknown');
-        $category = $this->enum($draft['category_slug'] ?? 'other', self::CATEGORIES, 'other');
 
-        $questions = $draft['missing_questions'] ?? [];
-        if (!is_array($questions)) {
-            $questions = [];
+        $categoryId = $this->resolveCategoryId($draft['category_id'] ?? null);
+        $workId = $this->resolveWorkId($draft['work_id'] ?? null, $categoryId);
+
+        $category = $categoryId
+            ? ProffiCategory::whereKey($categoryId)->where('is_active', true)->first()
+            : null;
+
+        if ($categoryId && !$category) {
+            $categoryId = null;
+        }
+
+        if ($workId) {
+            $work = ProffiWork::whereKey($workId)->where('is_active', true)->first();
+            if (!$work || ($categoryId && $work->category_id !== $categoryId)) {
+                $workId = null;
+            }
+        }
+
+        $inputText = (string) ($input['text'] ?? '');
+        $inferred = $this->inferWorkFromText($inputText, $categoryId)
+            ?: $this->inferWorkFromText($inputText, null);
+
+        if ($inferred && $inferred->id !== $workId) {
+            $workId = $inferred->id;
+            $categoryId = $inferred->category_id;
+            $category = $inferred->category;
+        } elseif (!$workId && $inferred) {
+            $workId = $inferred->id;
+            if (!$categoryId) {
+                $categoryId = $inferred->category_id;
+                $category = $inferred->category;
+            }
         }
 
         $confidence = $draft['confidence'] ?? 0;
         $confidence = is_numeric($confidence) ? (float) $confidence : 0.0;
 
+        $missingQuestions = $this->resolveMissingQuestions($workId, $draft['missing_questions'] ?? []);
+
+        $categorySlug = $category?->slug ?? $category?->id ?? 'other';
+
         return [
             'detected_language' => $language,
             'title' => $this->shortText($draft['title'] ?? 'Заявка на услугу', 160),
-            'category_slug' => $category,
+            'category_id' => $categoryId,
+            'work_id' => $workId,
+            'category_slug' => $categorySlug,
             'city' => $this->nullableText($draft['city'] ?? null, 100),
             'urgency' => $urgency,
             'description' => $this->shortText($draft['description'] ?? '', 4000),
             'master_summary' => $this->shortText($draft['master_summary'] ?? '', 600),
-            'missing_questions' => array_values(array_map(
-                fn ($question) => $this->shortText($question, 220),
-                array_filter($questions, fn ($question) => is_string($question) && trim($question) !== '')
-            )),
+            'missing_questions' => $missingQuestions,
             'confidence' => max(0, min(1, round($confidence, 2))),
         ];
+    }
+
+    private function resolveCategoryId(mixed $value): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $id = trim($value);
+
+        return ProffiCategory::whereKey($id)->where('is_active', true)->exists() ? $id : null;
+    }
+
+    private function resolveWorkId(mixed $value, ?string $categoryId): ?int
+    {
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        $id = (int) $value;
+        $query = ProffiWork::whereKey($id)->where('is_active', true);
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        return $query->exists() ? $id : null;
+    }
+
+    private function inferWorkFromText(string $text, ?string $categoryId): ?ProffiWork
+    {
+        $text = mb_strtolower(trim($text));
+        if ($text === '') {
+            return null;
+        }
+
+        $query = ProffiWork::query()
+            ->with('category')
+            ->where('is_active', true);
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $works = $query->orderBy('sort_order')->get();
+        $best = null;
+        $bestScore = 0;
+
+        foreach ($works as $work) {
+            $score = 0;
+            $title = mb_strtolower($work->title);
+            if ($title !== '' && str_contains($text, $title)) {
+                $score += 100;
+            }
+
+            if ($work->slug && str_contains($text, mb_strtolower($work->slug))) {
+                $score += 80;
+            }
+
+            foreach ($work->aliases ?? [] as $alias) {
+                $alias = mb_strtolower((string) $alias);
+                if ($alias !== '' && str_contains($text, $alias)) {
+                    $score += 60;
+                    continue;
+                }
+
+                $aliasWords = preg_split('/\s+/u', $alias) ?: [];
+                $matchedAliasWords = 0;
+                foreach ($aliasWords as $word) {
+                    $stem = mb_substr($word, 0, 4);
+                    if (mb_strlen($stem) >= 3 && str_contains($text, $stem)) {
+                        $matchedAliasWords++;
+                    }
+                }
+                if ($aliasWords && $matchedAliasWords === count($aliasWords)) {
+                    $score += 50;
+                }
+            }
+
+            foreach (preg_split('/\s+/u', $title) as $word) {
+                if (mb_strlen($word) >= 4 && str_contains($text, $word)) {
+                    $score += 10;
+                }
+            }
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $work;
+            }
+        }
+
+        if ($best && $bestScore >= 10) {
+            return $best;
+        }
+
+        if ($categoryId && $works->count() === 1) {
+            return $works->first();
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveMissingQuestions(?int $workId, mixed $aiQuestions): array
+    {
+        if ($workId) {
+            return ProffiWorkQuestion::query()
+                ->where('work_id', $workId)
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get()
+                ->map(fn (ProffiWorkQuestion $q) => [
+                    'question_id' => $q->id,
+                    'field_key' => $q->field_key,
+                    'question' => $q->question,
+                    'type' => $q->type,
+                    'options' => $q->options,
+                    'placeholder' => $q->placeholder,
+                    'help_text' => $q->help_text,
+                    'is_required' => $q->is_required,
+                ])
+                ->values()
+                ->all();
+        }
+
+        if (!is_array($aiQuestions)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($aiQuestions as $item) {
+            if (is_array($item) && isset($item['question']) && is_string($item['question'])) {
+                $result[] = [
+                    'question_id' => is_numeric($item['question_id'] ?? null) ? (int) $item['question_id'] : null,
+                    'field_key' => is_string($item['field_key'] ?? null) ? $item['field_key'] : null,
+                    'question' => $this->shortText($item['question'], 220),
+                    'type' => $this->enum($item['type'] ?? 'text', ['text', 'textarea', 'number', 'yesno', 'select', 'multiselect', 'photo'], 'text'),
+                    'options' => is_array($item['options'] ?? null) ? $item['options'] : null,
+                    'is_required' => (bool) ($item['is_required'] ?? false),
+                ];
+            } elseif (is_string($item) && trim($item) !== '') {
+                $result[] = [
+                    'question_id' => null,
+                    'field_key' => null,
+                    'question' => $this->shortText($item, 220),
+                    'type' => 'text',
+                    'options' => null,
+                    'is_required' => false,
+                ];
+            }
+        }
+
+        return $result;
     }
 
     private function enum(mixed $value, array $allowed, string $fallback): string
@@ -171,24 +353,28 @@ class JobDraftAiService
 Пользователь пишет на русском и может писать плохо, коротко или с ошибками.
 Твоя задача — превратить хаотичный текст в понятную заявку для мастера.
 Не выдумывай факты.
-Если данных нет — добавь вопрос в missing_questions.
 Пиши просто, понятно, без канцелярита.
 Ответ возвращай только в JSON по заданной структуре.
 Никакого markdown, никакого текста вне JSON.
+Выбирай category_id и work_id только из переданных списков. Если не уверен — верни null.
+Не придумывай вопросы в missing_questions — backend подставит их из справочника по выбранной работе.
 PROMPT;
     }
 
     private function userPrompt(array $data): string
     {
+        $catalog = $this->catalogContext();
+
         $schema = [
             'detected_language' => 'ru|unknown',
             'title' => 'string',
-            'category_slug' => 'bathroom-renovation|tile-work|plumbing|electrical|air-conditioners|other',
+            'category_id' => 'string|null — id из categories',
+            'work_id' => 'number|null — id из works',
             'city' => 'string|null',
             'urgency' => 'urgent|this_week|this_month|flexible|unknown',
             'description' => 'string',
             'master_summary' => 'string',
-            'missing_questions' => ['string'],
+            'missing_questions' => [],
             'confidence' => 'number between 0 and 1',
         ];
 
@@ -206,64 +392,70 @@ PROMPT;
                 'Use city_hint/category_hint only as hints, not as guaranteed facts.',
                 'If text mentions Moscow, Москва, SPb, Санкт-Петербург or other Russian cities, normalize city to the proper Russian name.',
                 'Default city_hint is Москва when city is unknown.',
-                'If important fields are missing, add clear questions to missing_questions.',
-                'For bathroom/tile/plumbing/electrical/air conditioner work choose the closest allowed category_slug.',
-                'Use ai_knowledge as Treabo internal knowledge. Prefer matching categories, works, parameters and questions from it.',
-                'If ai_knowledge contains required parameters for the detected work, ask about missing required parameters in missing_questions.',
+                'Choose category_id from categories list. Match by name, slug or context.',
+                'Choose work_id from works list. Match by title, slug or aliases.',
+                'If unsure about category or work, set category_id/work_id to null and lower confidence.',
+                'Do not generate missing_questions — leave as empty array.',
             ],
-            'ai_knowledge' => $this->knowledgeContext($data),
+            'categories' => $catalog['categories'],
+            'works' => $catalog['works'],
             'response_schema' => $schema,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
-    private function knowledgeContext(array $data): array
+    /**
+     * @return array{categories: array<int, array<string, mixed>>, works: array<int, array<string, mixed>>}
+     */
+    private function catalogContext(): array
     {
-        $text = mb_strtolower((string) ($data['text'] ?? ''));
-        $categoryHint = (string) ($data['category_hint'] ?? '');
-
-        return AiChatKnowledge::query()
+        $categories = ProffiCategory::query()
             ->where('is_active', true)
-            ->where(function ($query) use ($text, $categoryHint) {
-                $query->whereNull('category_slug');
-
-                if ($categoryHint !== '') {
-                    $query->orWhere('category_slug', $categoryHint);
-                }
-
-                if (str_contains($text, 'ванн') || str_contains($text, 'сануз') || str_contains($text, 'baie')) {
-                    $query->orWhere('category_slug', 'bathroom-renovation');
-                }
-
-                if (str_contains($text, 'плит') || str_contains($text, 'кафел') || str_contains($text, 'gresie')) {
-                    $query->orWhere('category_slug', 'tile-work')
-                        ->orWhere('work_slug', 'tile-work');
-                }
-
-                if (str_contains($text, 'сантех') || str_contains($text, 'труб') || str_contains($text, 'instalator')) {
-                    $query->orWhere('category_slug', 'plumbing');
-                }
-
-                if (str_contains($text, 'элект') || str_contains($text, 'розет') || str_contains($text, 'electric')) {
-                    $query->orWhere('category_slug', 'electrical');
-                }
-
-                if (str_contains($text, 'кондицион') || str_contains($text, 'aer conditionat')) {
-                    $query->orWhere('category_slug', 'air-conditioners');
-                }
-            })
             ->orderBy('sort_order')
-            ->limit(40)
-            ->get()
-            ->map(fn (AiChatKnowledge $item) => [
-                'type' => $item->type,
-                'category_slug' => $item->category_slug,
-                'work_slug' => $item->work_slug,
-                'title' => $item->title,
-                'slug' => $item->slug,
-                'content' => $item->content,
-                'payload' => $item->payload,
+            ->orderBy('name_ru')
+            ->get(['id', 'slug', 'name_ru', 'parent_id'])
+            ->map(fn (ProffiCategory $c) => [
+                'id' => $c->id,
+                'slug' => $c->slug,
+                'name_ru' => $c->name_ru,
+                'parent_id' => $c->parent_id,
             ])
             ->values()
             ->all();
+
+        $works = ProffiWork::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('title')
+            ->get(['id', 'category_id', 'title', 'slug', 'aliases', 'description'])
+            ->map(fn (ProffiWork $w) => [
+                'id' => $w->id,
+                'category_id' => $w->category_id,
+                'title' => $w->title,
+                'slug' => $w->slug,
+                'aliases' => $w->aliases ?? [],
+                'description' => $w->description,
+                'questions' => ProffiWorkQuestion::query()
+                    ->where('work_id', $w->id)
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get(['id', 'field_key', 'question', 'type', 'options', 'is_required'])
+                    ->map(fn (ProffiWorkQuestion $q) => [
+                        'id' => $q->id,
+                        'field_key' => $q->field_key,
+                        'question' => $q->question,
+                        'type' => $q->type,
+                        'options' => $q->options,
+                        'is_required' => $q->is_required,
+                    ])
+                    ->values()
+                    ->all(),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'categories' => $categories,
+            'works' => $works,
+        ];
     }
 }
