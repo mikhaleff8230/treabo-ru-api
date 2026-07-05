@@ -44,7 +44,9 @@ class TreaboAndreyReviewsSeeder extends Seeder
             [
                 'rating' => 4,
                 'comment' => 'Хороший мастер, всё объяснил и сделал качественно. Рекомендую.',
-                'photos' => [],
+                'photos' => [
+                    'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=800&q=80',
+                ],
             ],
         );
     }

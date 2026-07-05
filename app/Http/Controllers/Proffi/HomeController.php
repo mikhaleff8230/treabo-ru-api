@@ -84,7 +84,18 @@ class HomeController extends Controller
             $options = [];
         }
 
-        $assetUrl = fn (?array $asset) => $asset['original'] ?? $asset['thumbnail'] ?? null;
+        $assetUrl = function (?array $asset) {
+            $path = $asset['original'] ?? $asset['thumbnail'] ?? null;
+            if (!$path) {
+                return null;
+            }
+            if (preg_match('#^https?://#i', $path)) {
+                return $path;
+            }
+            $base = rtrim(config('app.url', 'https://api.treabo.ru'), '/');
+
+            return str_starts_with($path, '/') ? $base . $path : $base . '/' . ltrim($path, '/');
+        };
 
         return [
             'logo_url' => $assetUrl($options['logo'] ?? null),

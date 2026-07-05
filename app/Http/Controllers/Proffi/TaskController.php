@@ -367,7 +367,7 @@ class TaskController extends Controller
 
         return [
             'id' => (string) $task->id,
-            'title' => strip_tags((string) $task->title),
+            'title' => $task->displayTitle(),
             'description' => strip_tags((string) $task->description),
             'category' => (string) $task->category,
             'category_id' => $task->category_id ? (string) $task->category_id : null,

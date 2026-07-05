@@ -56,8 +56,19 @@ class AuthController extends Controller
         }
 
         $email = $data['email'] ?? $this->emailFromPhone($phone);
-        if (User::where('email', $email)->exists()) {
-            return response()->json(['detail' => 'Email already registered'], 400);
+        $existingByEmail = User::where('email', $email)->first();
+        if ($existingByEmail) {
+            if (!$this->canAddRoleForPhone($existingByEmail, $data['role'])) {
+                return response()->json(['detail' => 'Email already registered'], 400);
+            }
+            if ($this->isPhoneTakenByOtherUser($phone, (int) $existingByEmail->id)) {
+                return response()->json(['detail' => 'Phone already registered'], 400);
+            }
+            if ($this->treaboPhoneOtpEnabled()) {
+                return $this->startRegisterPhoneOtp($phone, $data, $existingByEmail);
+            }
+
+            return $this->upgradeExistingEmailUser($existingByEmail, $phone, $data);
         }
 
         if ($this->treaboPhoneOtpEnabled()) {
@@ -463,7 +474,7 @@ class AuthController extends Controller
         return $this->authResponse($user->fresh('profile'));
     }
 
-    private function startRegisterPhoneOtp(string $phone, array $data)
+    private function startRegisterPhoneOtp(string $phone, array $data, ?User $existingByEmail = null)
     {
         $existingUser = $this->findUserByPhone($phone);
         if ($existingUser) {
@@ -495,8 +506,37 @@ class AuthController extends Controller
         }
 
         $email = $data['email'] ?? $this->emailFromPhone($phone);
-        if (User::where('email', $email)->exists()) {
-            return response()->json(['detail' => 'Email already registered'], 400);
+        $existingByEmail ??= User::where('email', $email)->first();
+        if ($existingByEmail) {
+            $requestedRole = $data['role'] ?? 'customer';
+            if (!$this->canAddRoleForPhone($existingByEmail, $requestedRole)) {
+                return response()->json(['detail' => 'Email already registered'], 400);
+            }
+            if ($this->isPhoneTakenByOtherUser($phone, (int) $existingByEmail->id)) {
+                return response()->json(['detail' => 'Phone already registered'], 400);
+            }
+
+            $sent = $this->dispatchTreaboPhoneOtp($phone);
+            if (!$sent['ok']) {
+                return response()->json(['detail' => $sent['detail'] ?? 'SMS send failed'], 502);
+            }
+
+            $this->cacheTreaboOtpContext($sent['otp_id'], [
+                'purpose' => 'register',
+                'phone' => $phone,
+                'attempts' => 0,
+                'registration' => [
+                    'upgrade_existing_by_email' => true,
+                    'user_id' => (int) $existingByEmail->id,
+                    'name' => $data['name'] ?? $existingByEmail->name,
+                    'password' => $data['password'] ?? null,
+                    'role' => $requestedRole,
+                    'email' => $email,
+                    'city' => $data['city'] ?? null,
+                ],
+            ]);
+
+            return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
         }
 
         $sent = $this->dispatchTreaboPhoneOtp($phone);
@@ -552,6 +592,18 @@ class AuthController extends Controller
 
     private function completeRegisterPhoneOtp(string $phone, array $registration)
     {
+        if (!empty($registration['upgrade_existing_by_email']) && !empty($registration['user_id'])) {
+            $user = User::find((int) $registration['user_id']);
+            if (!$user) {
+                return response()->json(['detail' => 'User not found'], 404);
+            }
+            if ($this->isPhoneTakenByOtherUser($phone, (int) $user->id)) {
+                return response()->json(['detail' => 'Phone already registered'], 400);
+            }
+
+            return $this->upgradeExistingEmailUser($user, $phone, $registration);
+        }
+
         $existingUser = $this->findUserByPhone($phone);
         if ($existingUser && !empty($registration['upgrade_existing'])) {
             return $this->upgradeExistingPhoneUser($existingUser, $phone, $registration);
@@ -562,8 +614,16 @@ class AuthController extends Controller
         }
 
         $email = $registration['email'] ?? $this->emailFromPhone($phone);
-        if (User::where('email', $email)->exists()) {
-            return response()->json(['detail' => 'Email already registered'], 400);
+        $existingByEmail = User::where('email', $email)->first();
+        if ($existingByEmail) {
+            if (!$this->canAddRoleForPhone($existingByEmail, $registration['role'] ?? 'customer')) {
+                return response()->json(['detail' => 'Email already registered'], 400);
+            }
+            if ($this->isPhoneTakenByOtherUser($phone, (int) $existingByEmail->id)) {
+                return response()->json(['detail' => 'Phone already registered'], 400);
+            }
+
+            return $this->upgradeExistingEmailUser($existingByEmail, $phone, $registration);
         }
 
         $user = User::create([
@@ -679,6 +739,16 @@ class AuthController extends Controller
 
     private function upgradeExistingPhoneUser(User $user, string $phone, array $data)
     {
+        return $this->upgradeExistingUser($user, $phone, $data);
+    }
+
+    private function upgradeExistingEmailUser(User $user, string $phone, array $data)
+    {
+        return $this->upgradeExistingUser($user, $phone, $data);
+    }
+
+    private function upgradeExistingUser(User $user, string $phone, array $data)
+    {
         if (!empty($data['password'])) {
             $user->update(['password' => Hash::make($data['password'])]);
         }
@@ -697,6 +767,16 @@ class AuthController extends Controller
         $profile->update($patch);
 
         return $this->authResponse($user->fresh('profile'));
+    }
+
+    private function isPhoneTakenByOtherUser(string $phone, int $exceptUserId): bool
+    {
+        $profile = Profile::where('contact', $phone)->first();
+        if (!$profile) {
+            return false;
+        }
+
+        return (int) $profile->customer_id !== $exceptUserId;
     }
 
     private function normalizePhone(string $phone): string

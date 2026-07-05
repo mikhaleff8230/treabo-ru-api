@@ -21,7 +21,7 @@ class TreaboMobileUpdateSetting extends Model
             ['id' => 1],
             [
                 'latest_version' => '1.0.0',
-                'latest_build' => 2,
+                'latest_build' => 3,
                 'min_supported_build' => 1,
                 'force_update' => false,
                 'android_url' => 'https://treabo.ru/downloads/treabo-proffi.apk',

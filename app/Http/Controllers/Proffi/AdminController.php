@@ -10,6 +10,8 @@ use App\Models\BalanceDeposit;
 use App\Models\SellerBalance;
 use App\Models\ProffiChat;
 use App\Models\ProffiFilter;
+use App\Models\ProffiMessage;
+use App\Models\ProffiTask;
 use App\Http\Controllers\Proffi\Concerns\MapsProffiBudget;
 use App\Models\ProffiIdentityVerification;
 use App\Models\ProffiReview;
@@ -614,7 +616,7 @@ class AdminController extends Controller
     {
         return [
             'id' => (string) $task->id,
-            'title' => $task->title,
+            'title' => $task->displayTitle(),
             'description' => $task->description,
             'category' => (string) $task->category,
             'category_id' => $task->category_id ? (string) $task->category_id : null,
@@ -646,7 +648,7 @@ class AdminController extends Controller
         return [
             'id' => (string) $application->id,
             'task_id' => (string) $application->task_id,
-            'task_title' => $application->task?->title,
+            'task_title' => $application->task?->displayTitle(),
             'specialist_id' => (string) $application->specialist_id,
             'specialist_name' => $application->specialist?->name,
             'specialist_phone' => $application->specialist?->profile?->contact,
