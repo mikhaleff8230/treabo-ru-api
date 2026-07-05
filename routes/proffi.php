@@ -59,6 +59,8 @@ $proffiAdminRoutes = function () {
     Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
     Route::get('/matching-settings', [AdminController::class, 'matchingSettings']);
     Route::put('/matching-settings', [AdminController::class, 'updateMatchingSettings']);
+    Route::get('/mobile-update-settings', [AdminController::class, 'mobileUpdateSettings']);
+    Route::put('/mobile-update-settings', [AdminController::class, 'updateMobileUpdateSettings']);
     Route::get('/balance-deposits', [AdminController::class, 'balanceDeposits']);
 
     Route::get('/tasks', [AdminController::class, 'tasks']);
@@ -126,6 +128,7 @@ Route::post('/ai/job-draft', [AiJobDraftController::class, 'generate']);
 Route::get('/home/stats', [HomeController::class, 'stats']);
 Route::get('/home/top-specialists', [HomeController::class, 'topSpecialists']);
 Route::get('/site-settings', [HomeController::class, 'siteSettings']);
+Route::get('/mobile-version', [HomeController::class, 'mobileVersion']);
 Route::get('/stories', [CategoryController::class, 'stories']);
 Route::get('/files/{path}', [UploadController::class, 'show'])->where('path', '.*');
 Route::get('/tasks', [TaskController::class, 'index']);

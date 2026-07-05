@@ -14,6 +14,7 @@ use App\Http\Controllers\Proffi\Concerns\MapsProffiBudget;
 use App\Models\ProffiIdentityVerification;
 use App\Models\ProffiReview;
 use App\Models\TreaboMatchingSetting;
+use App\Models\TreaboMobileUpdateSetting;
 use App\Models\TreaboResponseSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -367,6 +368,39 @@ class AdminController extends Controller
             'min_rating' => $data['min_rating'],
             'min_reviews' => $data['min_reviews'],
             'max_recommended' => $data['max_recommended'],
+            'is_active' => $data['is_active'] ?? true,
+        ]);
+
+        return $settings->fresh();
+    }
+
+    public function mobileUpdateSettings()
+    {
+        return TreaboMobileUpdateSetting::current();
+    }
+
+    public function updateMobileUpdateSettings(Request $request)
+    {
+        $data = $request->validate([
+            'latest_version' => ['required', 'string', 'max:50'],
+            'latest_build' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'min_supported_build' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'force_update' => ['nullable', 'boolean'],
+            'android_url' => ['nullable', 'url', 'max:2048'],
+            'ios_url' => ['nullable', 'url', 'max:2048'],
+            'release_notes' => ['nullable', 'string', 'max:5000'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $settings = TreaboMobileUpdateSetting::current();
+        $settings->update([
+            'latest_version' => $data['latest_version'],
+            'latest_build' => $data['latest_build'],
+            'min_supported_build' => min($data['min_supported_build'], $data['latest_build']),
+            'force_update' => $data['force_update'] ?? false,
+            'android_url' => $data['android_url'] ?? null,
+            'ios_url' => $data['ios_url'] ?? null,
+            'release_notes' => $data['release_notes'] ?? null,
             'is_active' => $data['is_active'] ?? true,
         ]);
 

@@ -8,6 +8,7 @@ use App\Models\ProffiCategory;
 use App\Models\ProffiReview;
 use App\Models\ProffiTask;
 use App\Models\ProffiWork;
+use App\Models\TreaboMobileUpdateSetting;
 use Illuminate\Http\Request;
 use Marvel\Database\Models\Settings;
 use Marvel\Database\Models\User;
@@ -89,6 +90,22 @@ class HomeController extends Controller
             'logo_url' => $assetUrl($options['logo'] ?? null),
             'dark_logo_url' => $assetUrl($options['dark_logo'] ?? null),
             'site_title' => $options['siteTitle'] ?? 'Treabo',
+        ];
+    }
+
+    public function mobileVersion()
+    {
+        $settings = TreaboMobileUpdateSetting::current();
+
+        return [
+            'latest_version' => $settings->latest_version,
+            'latest_build' => (int) $settings->latest_build,
+            'min_supported_build' => (int) $settings->min_supported_build,
+            'force_update' => (bool) $settings->force_update,
+            'android_url' => $settings->android_url,
+            'ios_url' => $settings->ios_url,
+            'release_notes' => $settings->release_notes,
+            'is_active' => (bool) $settings->is_active,
         ];
     }
 }
