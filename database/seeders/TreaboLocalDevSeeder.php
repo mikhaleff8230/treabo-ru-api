@@ -20,17 +20,18 @@ class TreaboLocalDevSeeder extends Seeder
 
         $customer = $this->user(
             email: 'local.customer@treabo.local',
-            name: 'Андрей',
+            name: 'Светлана',
             phone: '+79990000001',
             role: UserPermission::CUSTOMER,
         );
 
         $this->user(
             email: 'local.master@treabo.local',
-            name: 'Мастер Сергей',
+            name: 'Андрей',
             phone: '+79990000002',
             role: UserPermission::STORE_OWNER,
             services: ['Ремонт', 'Покраска', 'Электрика'],
+            minPrice: 2500,
         );
 
         foreach ($this->tasks($customer->id) as $task) {
@@ -42,6 +43,8 @@ class TreaboLocalDevSeeder extends Seeder
                 $task,
             );
         }
+
+        $this->call(TreaboAndreyReviewsSeeder::class);
     }
 
     private function ensurePermissions(): void
@@ -70,6 +73,7 @@ class TreaboLocalDevSeeder extends Seeder
         string $phone,
         string $role,
         array $services = [],
+        ?int $minPrice = null,
     ): User {
         $user = User::updateOrCreate(
             ['email' => $email],
@@ -94,6 +98,10 @@ class TreaboLocalDevSeeder extends Seeder
                 'proffi_services' => $services,
                 'phone_verified' => true,
                 'phone_verified_at' => now(),
+                'socials' => $minPrice ? ['treabo_min_price' => $minPrice] : null,
+                'bio' => $role === UserPermission::STORE_OWNER
+                    ? 'Мастер по ремонту и отделке. Выезд по Москве, работаю аккуратно и в срок.'
+                    : null,
             ],
         );
 

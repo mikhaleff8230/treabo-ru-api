@@ -10,8 +10,10 @@ use App\Models\BalanceDeposit;
 use App\Models\SellerBalance;
 use App\Models\ProffiChat;
 use App\Models\ProffiFilter;
-use App\Models\ProffiMessage;
-use App\Models\ProffiTask;
+use App\Http\Controllers\Proffi\Concerns\MapsProffiBudget;
+use App\Models\ProffiIdentityVerification;
+use App\Models\ProffiReview;
+use App\Models\TreaboMatchingSetting;
 use App\Models\TreaboResponseSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +27,7 @@ use Spatie\Permission\Models\Permission as SpatiePermission;
 class AdminController extends Controller
 {
     use MapsProffiUsers;
+    use MapsProffiBudget;
 
     public function stats()
     {
@@ -242,6 +245,7 @@ class AdminController extends Controller
             'id' => ['required', 'string', 'max:64'],
             'parent_id' => ['nullable', 'string', 'max:64'],
             'icon' => ['nullable', 'string', 'max:64'],
+            'image' => ['nullable', 'string', 'max:2048'],
             'name_ru' => ['required', 'string'],
             'name_ro' => ['nullable', 'string'],
             'slug' => ['nullable', 'string', 'max:128'],
@@ -253,6 +257,7 @@ class AdminController extends Controller
             'id' => $data['id'],
             'parent_id' => $data['parent_id'] ?? null,
             'icon' => $data['icon'] ?: 'MoreHorizontal',
+            'image' => $data['image'] ?? null,
             'name_ru' => $data['name_ru'],
             'name_ro' => $data['name_ro'] ?? $data['name_ru'],
             'slug' => $data['slug'] ?? $data['id'],
@@ -268,6 +273,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'parent_id' => ['nullable', 'string', 'max:64'],
             'icon' => ['nullable', 'string', 'max:64'],
+            'image' => ['nullable', 'string', 'max:2048'],
             'name_ru' => ['required', 'string'],
             'name_ro' => ['nullable', 'string'],
             'slug' => ['nullable', 'string', 'max:128'],
@@ -279,6 +285,7 @@ class AdminController extends Controller
         $category->update([
             'parent_id' => $data['parent_id'] ?? null,
             'icon' => $data['icon'] ?: 'MoreHorizontal',
+            'image' => $data['image'] ?? null,
             'name_ru' => $data['name_ru'],
             'name_ro' => $data['name_ro'] ?? $data['name_ru'],
             'slug' => $data['slug'] ?? $category->slug,
@@ -309,6 +316,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'free_daily_limit' => ['required', 'integer', 'min:0', 'max:1000'],
+            'free_per_task_limit' => ['required', 'integer', 'min:0', 'max:1000'],
             'default_response_price_mdl' => ['required', 'integer', 'min:0', 'max:1000000'],
             'manual_deposit_amount_mdl' => ['required', 'integer', 'min:1', 'max:1000000'],
             'manual_deposit_url' => ['nullable', 'url', 'max:2048'],
@@ -318,9 +326,47 @@ class AdminController extends Controller
         $settings = TreaboResponseSetting::current();
         $settings->update([
             'free_daily_limit' => $data['free_daily_limit'],
+            'free_per_task_limit' => $data['free_per_task_limit'],
             'default_response_price_mdl' => $data['default_response_price_mdl'],
             'manual_deposit_amount_mdl' => $data['manual_deposit_amount_mdl'],
             'manual_deposit_url' => $data['manual_deposit_url'] ?? null,
+            'is_active' => $data['is_active'] ?? true,
+        ]);
+
+        return $settings->fresh();
+    }
+
+    public function matchingSettings()
+    {
+        return TreaboMatchingSetting::current();
+    }
+
+    public function updateMatchingSettings(Request $request)
+    {
+        $data = $request->validate([
+            'category_weight' => ['required', 'integer', 'min:0', 'max:1000'],
+            'work_weight' => ['required', 'integer', 'min:0', 'max:1000'],
+            'rating_weight' => ['required', 'integer', 'min:0', 'max:1000'],
+            'reviews_weight' => ['required', 'integer', 'min:0', 'max:1000'],
+            'online_weight' => ['required', 'integer', 'min:0', 'max:1000'],
+            'profile_relevance_weight' => ['required', 'integer', 'min:0', 'max:1000'],
+            'min_rating' => ['required', 'numeric', 'min:0', 'max:5'],
+            'min_reviews' => ['required', 'integer', 'min:0', 'max:100000'],
+            'max_recommended' => ['required', 'integer', 'min:1', 'max:5'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $settings = TreaboMatchingSetting::current();
+        $settings->update([
+            'category_weight' => $data['category_weight'],
+            'work_weight' => $data['work_weight'],
+            'rating_weight' => $data['rating_weight'],
+            'reviews_weight' => $data['reviews_weight'],
+            'online_weight' => $data['online_weight'],
+            'profile_relevance_weight' => $data['profile_relevance_weight'],
+            'min_rating' => $data['min_rating'],
+            'min_reviews' => $data['min_reviews'],
+            'max_recommended' => $data['max_recommended'],
             'is_active' => $data['is_active'] ?? true,
         ]);
 
@@ -406,6 +452,9 @@ class AdminController extends Controller
             'city' => ['required', 'string', 'max:128'],
             'address' => ['nullable', 'string', 'max:512'],
             'budget' => ['nullable', 'integer', 'min:0'],
+            'budget_type' => ['nullable', 'in:fixed,range'],
+            'budget_min' => ['nullable', 'integer', 'min:0'],
+            'budget_max' => ['nullable', 'integer', 'min:0'],
             'response_price_mdl' => ['nullable', 'integer', 'min:0'],
             'deadline' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'in:open,in_progress,done,cancelled'],
@@ -417,6 +466,7 @@ class AdminController extends Controller
         ]);
 
         $settings = TreaboResponseSetting::current();
+        $budgetFields = $this->normalizeBudgetInput($data);
 
         $task = ProffiTask::create([
             'title' => $data['title'],
@@ -425,7 +475,7 @@ class AdminController extends Controller
             'category_id' => $data['category'],
             'city' => $data['city'],
             'address' => $data['address'] ?? null,
-            'budget' => $data['budget'] ?? null,
+            ...$budgetFields,
             'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
             'deadline' => $data['deadline'] ?? null,
             'status' => $data['status'] ?? 'open',
@@ -447,6 +497,9 @@ class AdminController extends Controller
             'city' => ['required', 'string', 'max:128'],
             'address' => ['nullable', 'string', 'max:512'],
             'budget' => ['nullable', 'integer', 'min:0'],
+            'budget_type' => ['nullable', 'in:fixed,range'],
+            'budget_min' => ['nullable', 'integer', 'min:0'],
+            'budget_max' => ['nullable', 'integer', 'min:0'],
             'response_price_mdl' => ['nullable', 'integer', 'min:0'],
             'deadline' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'in:open,in_progress,done,cancelled'],
@@ -458,6 +511,7 @@ class AdminController extends Controller
         ]);
 
         $settings = TreaboResponseSetting::current();
+        $budgetFields = $this->normalizeBudgetInput($data);
 
         $task->update([
             'title' => $data['title'],
@@ -466,7 +520,7 @@ class AdminController extends Controller
             'category_id' => $data['category'],
             'city' => $data['city'],
             'address' => $data['address'] ?? null,
-            'budget' => $data['budget'] ?? null,
+            ...$budgetFields,
             'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
             'deadline' => $data['deadline'] ?? null,
             'status' => $data['status'] ?? 'open',
@@ -532,7 +586,7 @@ class AdminController extends Controller
             'category_id' => $task->category_id ? (string) $task->category_id : null,
             'city' => $task->city,
             'address' => $task->address,
-            'budget' => $task->budget,
+            ...$this->budgetFields($task),
             'response_price_mdl' => $task->response_price_mdl,
             'deadline' => $task->deadline,
             'status' => $task->status,
@@ -641,6 +695,133 @@ class AdminController extends Controller
             'text' => $message->text,
             'created_at' => optional($message->created_at)->toIso8601String(),
             'updated_at' => optional($message->updated_at)->toIso8601String(),
+        ];
+    }
+
+    public function reviews()
+    {
+        return ProffiReview::with(['customer.profile', 'specialist.profile', 'task'])
+            ->latest()
+            ->limit(500)
+            ->get()
+            ->map(fn (ProffiReview $review) => $this->mapAdminReview($review))
+            ->values();
+    }
+
+    public function createReview(Request $request)
+    {
+        $data = $request->validate([
+            'task_id' => ['nullable', 'integer', 'exists:proffi_tasks,id'],
+            'specialist_id' => ['required', 'integer', 'exists:users,id'],
+            'customer_id' => ['required', 'integer', 'exists:users,id'],
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+            'photos' => ['nullable', 'array', 'max:10'],
+            'photos.*' => ['string', 'max:2048'],
+        ]);
+
+        $review = ProffiReview::create([
+            ...$data,
+            'photos' => $this->mediaList($data['photos'] ?? []),
+        ]);
+
+        return response()->json($this->mapAdminReview($review->load(['customer.profile', 'specialist.profile', 'task'])), 201);
+    }
+
+    public function updateReview(Request $request, ProffiReview $review)
+    {
+        $data = $request->validate([
+            'task_id' => ['nullable', 'integer', 'exists:proffi_tasks,id'],
+            'specialist_id' => ['required', 'integer', 'exists:users,id'],
+            'customer_id' => ['required', 'integer', 'exists:users,id'],
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+            'photos' => ['nullable', 'array', 'max:10'],
+            'photos.*' => ['string', 'max:2048'],
+        ]);
+
+        $review->update([
+            ...$data,
+            'photos' => $this->mediaList($data['photos'] ?? []),
+        ]);
+
+        return $this->mapAdminReview($review->fresh(['customer.profile', 'specialist.profile', 'task']));
+    }
+
+    public function deleteReview(ProffiReview $review)
+    {
+        $review->delete();
+
+        return ['ok' => true];
+    }
+
+    public function verifications()
+    {
+        return ProffiIdentityVerification::with(['user.profile'])
+            ->whereIn('status', [
+                ProffiIdentityVerification::STATUS_PENDING,
+                ProffiIdentityVerification::STATUS_APPROVED,
+                ProffiIdentityVerification::STATUS_REJECTED,
+            ])
+            ->latest()
+            ->limit(500)
+            ->get()
+            ->map(fn (ProffiIdentityVerification $item) => [
+                'id' => (string) $item->id,
+                'user_id' => (string) $item->user_id,
+                'user_name' => $item->user?->name,
+                'user_phone' => $item->user?->profile?->contact,
+                'status' => $item->status,
+                'passport_main_photo' => $item->passport_main_photo,
+                'passport_registration_photo' => $item->passport_registration_photo,
+                'passport_selfie_photo' => $item->passport_selfie_photo,
+                'moderator_comment' => $item->moderator_comment,
+                'created_at' => optional($item->created_at)->toIso8601String(),
+                'updated_at' => optional($item->updated_at)->toIso8601String(),
+            ])
+            ->values();
+    }
+
+    public function approveVerification(Request $request, ProffiIdentityVerification $verification)
+    {
+        $verification->update([
+            'status' => ProffiIdentityVerification::STATUS_APPROVED,
+            'moderator_comment' => null,
+            'reviewed_by' => null,
+        ]);
+
+        return ['ok' => true, 'status' => $verification->status];
+    }
+
+    public function rejectVerification(Request $request, ProffiIdentityVerification $verification)
+    {
+        $data = $request->validate([
+            'moderator_comment' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $verification->update([
+            'status' => ProffiIdentityVerification::STATUS_REJECTED,
+            'moderator_comment' => $data['moderator_comment'] ?? null,
+            'reviewed_by' => null,
+        ]);
+
+        return ['ok' => true, 'status' => $verification->status];
+    }
+
+    private function mapAdminReview(ProffiReview $review): array
+    {
+        return [
+            'id' => (string) $review->id,
+            'task_id' => $review->task_id ? (string) $review->task_id : null,
+            'task_title' => $review->task?->title,
+            'specialist_id' => (string) $review->specialist_id,
+            'specialist_name' => $review->specialist?->name,
+            'customer_id' => (string) $review->customer_id,
+            'customer_name' => $review->customer?->name,
+            'rating' => (int) $review->rating,
+            'comment' => $review->comment,
+            'photos' => $this->mediaList($review->photos ?: []),
+            'created_at' => optional($review->created_at)->toIso8601String(),
         ];
     }
 

@@ -10,7 +10,7 @@ trait UsesTreaboPhoneOtp
 {
     protected function treaboPhoneOtpEnabled(): bool
     {
-        return (bool) config('services.treabo.phone_otp_enabled', false);
+        return (bool) (config('services.treabo.phone_otp_enabled') ?? env('TREABO_PHONE_OTP_ENABLED', false));
     }
 
     protected function getTreaboOtpGateway(): OtpGateway

@@ -43,6 +43,8 @@ class SpecialistReviewController extends Controller
             'task_id' => ['required', 'integer', 'exists:proffi_tasks,id'],
             'rating' => ['required', 'integer', 'min:1', 'max:5'],
             'comment' => ['nullable', 'string', 'max:2000'],
+            'photos' => ['nullable', 'array', 'max:10'],
+            'photos.*' => ['string', 'max:2048'],
         ]);
 
         $task = ProffiTask::findOrFail($data['task_id']);
@@ -68,6 +70,7 @@ class SpecialistReviewController extends Controller
             [
                 'rating' => $data['rating'],
                 'comment' => $data['comment'] ?? null,
+                'photos' => $data['photos'] ?? [],
             ]
         );
 
@@ -85,6 +88,7 @@ class SpecialistReviewController extends Controller
             'customer_name' => $review->customer?->name,
             'rating' => (int) $review->rating,
             'comment' => $review->comment,
+            'photos' => is_array($review->photos) ? $review->photos : [],
             'created_at' => optional($review->created_at)->toIso8601String(),
         ];
     }

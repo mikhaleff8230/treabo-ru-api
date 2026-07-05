@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Proffi;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Proffi\Concerns\MapsProffiUsers;
+use App\Models\ProffiChat;
+use App\Models\ProffiTask;
 use App\Services\Proffi\ProffiCategorySearchService;
 use Illuminate\Http\Request;
 use Marvel\Database\Models\User;
@@ -48,7 +50,10 @@ class SpecialistController extends Controller
             });
         }
 
-        return $query->limit(100)->get()->map(fn (User $user) => $this->publicUser($user))->values();
+        return $query->limit(100)->get()
+            ->map(fn (User $user) => $this->publicUser($user))
+            ->filter(fn (array $specialist) => ($specialist['role'] ?? null) === 'specialist')
+            ->values();
     }
 
     public function show(User $user)
@@ -58,5 +63,44 @@ class SpecialistController extends Controller
         }
 
         return $this->publicUser($user->load('profile'));
+    }
+
+    public function contact(Request $request, User $user)
+    {
+        if (!$user->getPermissionNames()->contains(Permission::STORE_OWNER)) {
+            return response()->json(['detail' => 'Specialist not found'], 404);
+        }
+
+        $taskId = $request->input('task_id');
+        $task = null;
+
+        if ($taskId) {
+            $task = ProffiTask::where('id', $taskId)
+                ->where('customer_id', $request->user()->id)
+                ->first();
+        } else {
+            $task = ProffiTask::where('customer_id', $request->user()->id)
+                ->where('status', 'open')
+                ->latest()
+                ->first();
+        }
+
+        if (!$task) {
+            return response()->json([
+                'detail' => 'Сначала создайте заявку, чтобы написать специалисту',
+                'requires_task' => true,
+            ], 400);
+        }
+
+        $chat = ProffiChat::updateOrCreate(
+            ['task_id' => $task->id, 'specialist_id' => $user->id],
+            ['customer_id' => $task->customer_id]
+        );
+
+        return [
+            'chat_id' => (string) $chat->id,
+            'task_id' => (string) $task->id,
+            'specialist_id' => (string) $user->id,
+        ];
     }
 }

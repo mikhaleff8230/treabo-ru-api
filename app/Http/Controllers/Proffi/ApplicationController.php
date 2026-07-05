@@ -106,23 +106,37 @@ class ApplicationController extends Controller
     private function responsePreview(Request $request, ProffiTask $task): array
     {
         $settings = TreaboResponseSetting::current();
-        $limit = max(0, (int) $settings->free_daily_limit);
+        $dailyLimit = max(0, (int) $settings->free_daily_limit);
+        $taskFreeLimit = max(0, (int) ($settings->free_per_task_limit ?? 0));
         $price = (int) ($task->response_price_mdl ?: $settings->default_response_price_mdl ?: 15);
         $existing = ProffiApplication::where('task_id', $task->id)
             ->where('specialist_id', $request->user()->id)
             ->first();
         $usedToday = ProffiApplication::where('specialist_id', $request->user()->id)
+            ->where('response_fee_mdl', 0)
             ->whereBetween('created_at', [now()->startOfDay(), now()->endOfDay()])
             ->count();
-        $remainingBefore = max(0, $limit - $usedToday);
-        $isFree = !$existing && $remainingBefore > 0;
+        $freeUsedOnTask = ProffiApplication::where('task_id', $task->id)
+            ->where('response_fee_mdl', 0)
+            ->count();
+        $remainingDaily = max(0, $dailyLimit - $usedToday);
+        $remainingTaskFree = max(0, $taskFreeLimit - $freeUsedOnTask);
+        $withinPaidPeriod = $task->created_at && $task->created_at->greaterThan(now()->subMinutes(60));
+        $isFree = !$existing
+            && !$withinPaidPeriod
+            && $remainingDaily > 0
+            && $remainingTaskFree > 0;
 
         return [
             'has_applied' => (bool) $existing,
-            'free_daily_limit' => $limit,
+            'free_daily_limit' => $dailyLimit,
+            'free_per_task_limit' => $taskFreeLimit,
             'free_used_today' => $usedToday,
-            'free_remaining_before' => $remainingBefore,
-            'free_remaining_after' => $existing ? $remainingBefore : max(0, $remainingBefore - 1),
+            'free_used_on_task' => $freeUsedOnTask,
+            'free_remaining_before' => $remainingDaily,
+            'free_remaining_on_task' => $remainingTaskFree,
+            'free_remaining_after' => $existing ? $remainingDaily : max(0, $remainingDaily - 1),
+            'within_paid_period' => $withinPaidPeriod,
             'charge_required' => !$existing && !$isFree,
             'is_free' => $isFree,
             'response_fee_mdl' => $existing ? (int) ($existing->response_fee_mdl ?? 0) : ($isFree ? 0 : $price),

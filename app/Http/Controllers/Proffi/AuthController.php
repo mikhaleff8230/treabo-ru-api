@@ -43,8 +43,16 @@ class AuthController extends Controller
         ]);
 
         $phone = $this->normalizePhone($data['phone']);
-        if (Profile::where('contact', $phone)->exists()) {
-            return response()->json(['detail' => 'Phone already registered'], 400);
+        $existingUser = $this->findUserByPhone($phone);
+        if ($existingUser) {
+            if (!$this->canAddRoleForPhone($existingUser, $data['role'])) {
+                return response()->json(['detail' => 'Phone already registered'], 400);
+            }
+            if ($this->treaboPhoneOtpEnabled()) {
+                return $this->startRegisterPhoneOtp($phone, $data);
+            }
+
+            return $this->upgradeExistingPhoneUser($existingUser, $phone, $data);
         }
 
         $email = $data['email'] ?? $this->emailFromPhone($phone);
@@ -151,6 +159,10 @@ class AuthController extends Controller
 
         if (($context['purpose'] ?? null) === 'register') {
             return $this->completeRegisterPhoneOtp($phone, $context['registration'] ?? []);
+        }
+
+        if (($context['purpose'] ?? null) === 'change_phone') {
+            return $this->completeChangePhoneOtp($phone, (int) ($context['user_id'] ?? 0));
         }
 
         return $this->completeLoginPhoneOtp($phone, (int) ($context['user_id'] ?? 0));
@@ -294,7 +306,14 @@ class AuthController extends Controller
             $this->assignRole($user, $data['role']);
             $user->profile()->create($this->profilePayload(['contact' => null, 'proffi_services' => []]));
         } elseif ($user->email_verified_at) {
-            return response()->json(['detail' => 'Email already registered'], 400);
+            if ($this->canAddRoleForPhone($user, $data['role'])) {
+                $this->assignRole($user, $data['role']);
+                if (!empty($data['name'])) {
+                    $user->update(['name' => $data['name']]);
+                }
+            } else {
+                return response()->json(['detail' => 'Email already registered'], 400);
+            }
         }
         return $this->sendOtp($user);
     }
@@ -386,10 +405,93 @@ class AuthController extends Controller
         return $this->publicUser($request->user()->fresh('profile'));
     }
 
+    public function sendChangePhoneOtp(Request $request)
+    {
+        if (!$this->treaboPhoneOtpEnabled()) {
+            return response()->json(['detail' => 'Phone OTP is disabled'], 404);
+        }
+
+        $data = $request->validate([
+            'phone' => ['required', 'string'],
+        ]);
+
+        $phone = $this->normalizePhone($data['phone']);
+        $profile = $request->user()->profile;
+        $currentPhone = $profile?->contact;
+
+        if ($currentPhone && $phone === $currentPhone) {
+            return response()->json(['detail' => 'Новый номер совпадает с текущим'], 400);
+        }
+
+        if (Profile::where('contact', $phone)->where('customer_id', '!=', $request->user()->id)->exists()) {
+            return response()->json(['detail' => 'Этот номер уже используется'], 409);
+        }
+
+        $sent = $this->dispatchTreaboPhoneOtp($phone);
+        $this->cacheTreaboOtpContext($sent['otp_id'], [
+            'phone' => $phone,
+            'purpose' => 'change_phone',
+            'user_id' => $request->user()->id,
+            'attempts' => 0,
+        ]);
+
+        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
+    }
+
+    private function completeChangePhoneOtp(string $phone, int $userId)
+    {
+        if ($userId <= 0) {
+            return response()->json(['detail' => 'Invalid verification session'], 400);
+        }
+
+        if (Profile::where('contact', $phone)->where('customer_id', '!=', $userId)->exists()) {
+            return response()->json(['detail' => 'Этот номер уже используется'], 409);
+        }
+
+        $user = User::find($userId);
+        if (!$user) {
+            return response()->json(['detail' => 'User not found'], 404);
+        }
+
+        $profile = $user->profile()->firstOrCreate(['customer_id' => $user->id]);
+        $profile->update([
+            'contact' => $phone,
+            'phone_verified' => true,
+            'phone_verified_at' => now(),
+        ]);
+
+        return $this->authResponse($user->fresh('profile'));
+    }
+
     private function startRegisterPhoneOtp(string $phone, array $data)
     {
-        if (Profile::where('contact', $phone)->exists()) {
-            return response()->json(['detail' => 'Phone already registered'], 400);
+        $existingUser = $this->findUserByPhone($phone);
+        if ($existingUser) {
+            $requestedRole = $data['role'] ?? 'customer';
+            if (!$this->canAddRoleForPhone($existingUser, $requestedRole)) {
+                return response()->json(['detail' => 'Phone already registered'], 400);
+            }
+
+            $sent = $this->dispatchTreaboPhoneOtp($phone);
+            if (!$sent['ok']) {
+                return response()->json(['detail' => $sent['detail'] ?? 'SMS send failed'], 502);
+            }
+
+            $this->cacheTreaboOtpContext($sent['otp_id'], [
+                'purpose' => 'register',
+                'phone' => $phone,
+                'attempts' => 0,
+                'registration' => [
+                    'upgrade_existing' => true,
+                    'name' => $data['name'] ?? $existingUser->name,
+                    'password' => $data['password'] ?? null,
+                    'role' => $requestedRole,
+                    'email' => $data['email'] ?? null,
+                    'city' => $data['city'] ?? null,
+                ],
+            ]);
+
+            return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
         }
 
         $email = $data['email'] ?? $this->emailFromPhone($phone);
@@ -450,7 +552,12 @@ class AuthController extends Controller
 
     private function completeRegisterPhoneOtp(string $phone, array $registration)
     {
-        if (Profile::where('contact', $phone)->exists()) {
+        $existingUser = $this->findUserByPhone($phone);
+        if ($existingUser && !empty($registration['upgrade_existing'])) {
+            return $this->upgradeExistingPhoneUser($existingUser, $phone, $registration);
+        }
+
+        if ($existingUser) {
             return response()->json(['detail' => 'Phone already registered'], 400);
         }
 
@@ -510,9 +617,23 @@ class AuthController extends Controller
         $code = (string) random_int(100000, 999999);
         Cache::put("proffi_otp:" . Str::lower($user->email), $code, now()->addMinutes(10));
         $payload = ['status' => 'otp_sent', 'email' => $user->email];
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw(
+                "Ваш код подтверждения Treabo: {$code}",
+                fn ($message) => $message->to($user->email)->subject('Код подтверждения Treabo'),
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Email OTP send failed', [
+                'email' => $user->email,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
         if (app()->environment('local')) {
             $payload['dev_otp'] = $code;
         }
+
         return $payload;
     }
 
@@ -537,6 +658,45 @@ class AuthController extends Controller
             SpatiePermission::firstOrCreate(['name' => Permission::CUSTOMER, 'guard_name' => 'api']);
             $user->givePermissionTo(Permission::CUSTOMER);
         }
+    }
+
+    private function findUserByPhone(string $phone): ?User
+    {
+        $profile = Profile::where('contact', $phone)->first();
+
+        return $profile ? User::find($profile->customer_id) : null;
+    }
+
+    private function canAddRoleForPhone(User $user, string $role): bool
+    {
+        $currentRole = $this->proffiRole($user);
+        if ($currentRole === $role) {
+            return false;
+        }
+
+        return !($currentRole === 'specialist' && $role === 'customer');
+    }
+
+    private function upgradeExistingPhoneUser(User $user, string $phone, array $data)
+    {
+        if (!empty($data['password'])) {
+            $user->update(['password' => Hash::make($data['password'])]);
+        }
+        if (!empty($data['name'])) {
+            $user->update(['name' => $data['name']]);
+        }
+
+        $this->assignRole($user, $data['role']);
+        $profile = $user->profile()->firstOrCreate(['customer_id' => $user->id]);
+        $patch = $this->profilePayload([
+            'contact' => $phone,
+            'proffi_city' => $data['city'] ?? $profile->proffi_city,
+            'phone_verified' => true,
+            'phone_verified_at' => now(),
+        ]);
+        $profile->update($patch);
+
+        return $this->authResponse($user->fresh('profile'));
     }
 
     private function normalizePhone(string $phone): string

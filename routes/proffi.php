@@ -13,6 +13,9 @@ use App\Http\Controllers\Proffi\AuthController;
 use App\Http\Controllers\Proffi\CategoryAttributeController;
 use App\Http\Controllers\Proffi\CategoryController;
 use App\Http\Controllers\Proffi\ChatController;
+use App\Http\Controllers\Proffi\FavoriteController;
+use App\Http\Controllers\Proffi\HomeController;
+use App\Http\Controllers\Proffi\IdentityVerificationController;
 use App\Http\Controllers\Proffi\JobAttributeController;
 use App\Http\Controllers\Proffi\SpecialistController;
 use App\Http\Controllers\Proffi\SpecialistReviewController;
@@ -54,6 +57,8 @@ $proffiAdminRoutes = function () {
 
     Route::get('/response-settings', [AdminController::class, 'responseSettings']);
     Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
+    Route::get('/matching-settings', [AdminController::class, 'matchingSettings']);
+    Route::put('/matching-settings', [AdminController::class, 'updateMatchingSettings']);
     Route::get('/balance-deposits', [AdminController::class, 'balanceDeposits']);
 
     Route::get('/tasks', [AdminController::class, 'tasks']);
@@ -77,6 +82,15 @@ $proffiAdminRoutes = function () {
     Route::post('/ai-chat/knowledge', [AiChatKnowledgeController::class, 'store']);
     Route::put('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'update']);
     Route::delete('/ai-chat/knowledge/{knowledge}', [AiChatKnowledgeController::class, 'destroy']);
+
+    Route::get('/reviews', [AdminController::class, 'reviews']);
+    Route::post('/reviews', [AdminController::class, 'createReview']);
+    Route::put('/reviews/{review}', [AdminController::class, 'updateReview'])->whereNumber('review');
+    Route::delete('/reviews/{review}', [AdminController::class, 'deleteReview'])->whereNumber('review');
+
+    Route::get('/verifications', [AdminController::class, 'verifications']);
+    Route::post('/verifications/{verification}/approve', [AdminController::class, 'approveVerification'])->whereNumber('verification');
+    Route::post('/verifications/{verification}/reject', [AdminController::class, 'rejectVerification'])->whereNumber('verification');
 };
 
 Route::prefix('proffi')->group(function () use ($proffiAdminRoutes) {
@@ -96,22 +110,29 @@ Route::prefix('auth')->group(function () {
         Route::get('/stats', [AuthController::class, 'stats']);
         Route::patch('/profile', [AuthController::class, 'updateProfile']);
         Route::post('/profile', [AuthController::class, 'updateProfile']);
+        Route::post('/phone/change/send-otp', [AuthController::class, 'sendChangePhoneOtp']);
     });
 });
 
 Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/works', [ProffiWorkController::class, 'index']);
+Route::get('/questions', [ProffiWorkQuestionController::class, 'index']);
 Route::get('/locations/moldova/search', [MoldovaLocationController::class, 'search']);
 Route::get('/locations/russia/search', [RussiaLocationController::class, 'search']);
 Route::get('/locations/search', [RussiaLocationController::class, 'search']);
 Route::get('/categories/{category}/attributes', [CategoryAttributeController::class, 'index']);
 Route::get('/ai/categories/{category}/schema', [AiCategorySchemaController::class, 'show']);
-Route::post('/ai/job-draft', [AiJobDraftController::class, 'generate'])->middleware('throttle:10,1');
+Route::post('/ai/job-draft', [AiJobDraftController::class, 'generate']);
+Route::get('/home/stats', [HomeController::class, 'stats']);
+Route::get('/home/top-specialists', [HomeController::class, 'topSpecialists']);
+Route::get('/site-settings', [HomeController::class, 'siteSettings']);
 Route::get('/stories', [CategoryController::class, 'stories']);
 Route::get('/files/{path}', [UploadController::class, 'show'])->where('path', '.*');
 Route::get('/tasks', [TaskController::class, 'index']);
 Route::get('/jobs/{job}/attributes', [JobAttributeController::class, 'show'])->whereNumber('job');
 Route::get('/tasks/{job}/attributes', [JobAttributeController::class, 'show'])->whereNumber('job');
 Route::get('/tasks/{task}', [TaskController::class, 'show'])->whereNumber('task');
+Route::get('/tasks/{task}/recommended-specialists', [TaskController::class, 'recommendedSpecialists'])->whereNumber('task');
 Route::get('/specialists', [SpecialistController::class, 'index']);
 Route::get('/specialists/{user}', [SpecialistController::class, 'show'])->whereNumber('user');
 Route::get('/specialists/{user}/reviews', [SpecialistReviewController::class, 'index'])->whereNumber('user');
@@ -120,6 +141,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/uploads', [UploadController::class, 'store']);
 
     Route::post('/tasks', [TaskController::class, 'store']);
+    Route::patch('/tasks/{task}/budget', [TaskController::class, 'updateBudget'])->whereNumber('task');
+    Route::post('/tasks/{task}/close', [TaskController::class, 'close'])->whereNumber('task');
     Route::post('/jobs/{job}/attributes', [JobAttributeController::class, 'store'])->whereNumber('job');
     Route::post('/tasks/{job}/attributes', [JobAttributeController::class, 'store'])->whereNumber('job');
     Route::get('/tasks/mine', [TaskController::class, 'mine']);
@@ -128,10 +151,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/tasks/{task}/applications', [TaskController::class, 'applications']);
     Route::post('/tasks/{task}/applications', [ApplicationController::class, 'store']);
     Route::get('/tasks/{task}/specialist-info', [TaskController::class, 'specialistInfo']);
+    Route::post('/tasks/{task}/contact-specialist/{specialist}', [TaskController::class, 'contactSpecialist'])
+        ->whereNumber('task')
+        ->whereNumber('specialist');
 
     Route::get('/applications/mine', [ApplicationController::class, 'mine']);
     Route::post('/applications/{application}/accept', [ApplicationController::class, 'accept']);
     Route::post('/specialists/{user}/reviews', [SpecialistReviewController::class, 'store'])->whereNumber('user');
+    Route::post('/specialists/{user}/contact', [SpecialistController::class, 'contact'])->whereNumber('user');
+
+    Route::get('/favorites', [FavoriteController::class, 'index']);
+    Route::post('/favorites/{task}', [FavoriteController::class, 'store'])->whereNumber('task');
+    Route::delete('/favorites/{task}', [FavoriteController::class, 'destroy'])->whereNumber('task');
+
+    Route::get('/identity-verification', [IdentityVerificationController::class, 'show']);
+    Route::post('/identity-verification', [IdentityVerificationController::class, 'submit']);
 
     Route::get('/balance', [SellerBalanceController::class, 'get']);
     Route::get('/balance/transactions', [SellerBalanceController::class, 'transactions']);

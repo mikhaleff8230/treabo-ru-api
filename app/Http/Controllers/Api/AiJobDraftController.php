@@ -7,6 +7,7 @@ use App\Http\Requests\GenerateJobDraftRequest;
 use App\Models\AiJobDraft;
 use App\Services\Ai\JobDraftAiException;
 use App\Services\Ai\JobDraftAiService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -14,6 +15,17 @@ class AiJobDraftController extends Controller
 {
     public function generate(GenerateJobDraftRequest $request, JobDraftAiService $service)
     {
+        $ip = $request->ip() ?: 'unknown';
+        $cacheKey = "ai_job_draft_ip:{$ip}";
+        $count = (int) Cache::get($cacheKey, 0);
+
+        if ($count >= 3) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Достигнут лимит: 3 AI-проверки в сутки. Попробуйте завтра.',
+            ], 429);
+        }
+
         $data = $request->validated();
         $data['language_hint'] = $data['language_hint'] ?? 'auto';
         $userId = $this->resolveUserId($request);
@@ -30,6 +42,8 @@ class AiJobDraftController extends Controller
                 'status' => 'success',
                 'tokens_used' => $service->tokensUsed(),
             ]);
+
+            Cache::put($cacheKey, $count + 1, now()->addDay());
 
             return response()->json([
                 'success' => true,

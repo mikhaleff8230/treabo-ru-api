@@ -62,6 +62,7 @@ class CategoryController extends Controller
         return [
             'id' => (string) $category->id,
             'icon' => $category->icon ?: 'Briefcase',
+            'image' => $category->image ?? null,
             'name_ru' => $category->name_ru,
             'name_ro' => $category->name_ro ?: $category->name_ru,
             'slug' => $category->slug,

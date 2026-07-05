@@ -6,14 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Marvel\Database\Models\User;
 
-class ProffiReview extends Model
+class ProffiTaskRecommendedSpecialist extends Model
 {
-    protected $table = 'proffi_reviews';
+    protected $table = 'proffi_task_recommended_specialists';
     protected $guarded = [];
-
     protected $casts = [
-        'rating' => 'integer',
-        'photos' => 'array',
+        'score' => 'float',
+        'rank' => 'integer',
     ];
 
     public function task(): BelongsTo
@@ -24,10 +23,5 @@ class ProffiReview extends Model
     public function specialist(): BelongsTo
     {
         return $this->belongsTo(User::class, 'specialist_id');
-    }
-
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'customer_id');
     }
 }

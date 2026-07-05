@@ -17,6 +17,8 @@ class ProffiTask extends Model
         'lat' => 'float',
         'lng' => 'float',
         'budget' => 'integer',
+        'budget_min' => 'integer',
+        'budget_max' => 'integer',
         'response_price_mdl' => 'integer',
     ];
 
@@ -38,6 +40,11 @@ class ProffiTask extends Model
     public function applications(): HasMany
     {
         return $this->hasMany(ProffiApplication::class, 'task_id');
+    }
+
+    public function recommendedSpecialists(): HasMany
+    {
+        return $this->hasMany(ProffiTaskRecommendedSpecialist::class, 'task_id')->orderBy('rank');
     }
 
     public function attributeValues(): HasMany
