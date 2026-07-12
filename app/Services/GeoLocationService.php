@@ -484,18 +484,25 @@ class GeoLocationService
                 return null;
             }
             
-            $query = null;
             if ($addressQuery) {
-                $query = $addressQuery;
+                $url = $this->dadataApiUrl . '/suggest/address';
+                $payload = [
+                    'query' => $addressQuery,
+                    'count' => 1,
+                ];
             } elseif ($lat !== null && $lon !== null) {
-                // Обратный геокодинг по координатам
-                $query = "{$lon},{$lat}";
+                // DaData has a dedicated reverse-geocoding endpoint. Passing
+                // coordinates as a text query to suggest/address returns no data.
+                $url = $this->dadataApiUrl . '/geolocate/address';
+                $payload = [
+                    'lat' => $lat,
+                    'lon' => $lon,
+                    'radius_meters' => 1000,
+                    'count' => 1,
+                ];
             } else {
                 return null;
             }
-            
-            // Прямой HTTP запрос к DaData API
-            $url = $this->dadataApiUrl . '/suggest/address';
             
             $response = Http::timeout(5)
                 ->withHeaders([
@@ -503,16 +510,13 @@ class GeoLocationService
                     'Accept' => 'application/json',
                     'Authorization' => 'Token ' . $this->dadataApiKey
                 ])
-                ->post($url, [
-                    'query' => $query,
-                    'count' => 1
-                ]);
+                ->post($url, $payload);
             
             if (!$response->successful()) {
                 Log::warning('DaData reverse geocoding: API request failed', [
                     'status' => $response->status(),
                     'body' => $response->body(),
-                    'query' => $query
+                    'request' => $addressQuery ?: ['lat' => $lat, 'lon' => $lon]
                 ]);
                 return null;
             }
@@ -525,7 +529,7 @@ class GeoLocationService
                 $data = $suggestion['data'] ?? [];
                 
                 return [
-                    'city' => $data['city'] ?? null,
+                    'city' => $data['city'] ?? $data['settlement'] ?? null,
                     'state_name' => $data['region_with_type'] ?? $data['region'] ?? null,
                     'country' => $data['country'] ?? 'Россия',
                     'iso_code' => $data['country_iso_code'] ?? 'RU',
