@@ -37,6 +37,11 @@ class ProffiTask extends Model
         return $this->belongsTo(ProffiWork::class, 'work_id');
     }
 
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(RussiaLocation::class, 'location_id');
+    }
+
     public function applications(): HasMany
     {
         return $this->hasMany(ProffiApplication::class, 'task_id');

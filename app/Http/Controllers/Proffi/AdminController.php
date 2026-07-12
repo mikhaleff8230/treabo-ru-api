@@ -18,6 +18,7 @@ use App\Models\ProffiReview;
 use App\Models\TreaboMatchingSetting;
 use App\Models\TreaboMobileUpdateSetting;
 use App\Models\TreaboResponseSetting;
+use App\Services\Proffi\TaskLocationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -31,6 +32,10 @@ class AdminController extends Controller
 {
     use MapsProffiUsers;
     use MapsProffiBudget;
+
+    public function __construct(private readonly TaskLocationService $taskLocation)
+    {
+    }
 
     public function stats()
     {
@@ -486,6 +491,7 @@ class AdminController extends Controller
             'description' => ['required', 'string'],
             'category' => ['required', 'string', 'max:64'],
             'city' => ['required', 'string', 'max:128'],
+            'location_id' => ['nullable', 'integer', 'exists:russia_locations,id'],
             'address' => ['nullable', 'string', 'max:512'],
             'budget' => ['nullable', 'integer', 'min:0'],
             'budget_type' => ['nullable', 'in:fixed,range'],
@@ -501,6 +507,7 @@ class AdminController extends Controller
             'photos.*' => ['string', 'max:2048'],
         ]);
 
+        $data = $this->taskLocation->normalize($data);
         $settings = TreaboResponseSetting::current();
         $budgetFields = $this->normalizeBudgetInput($data);
 
@@ -510,6 +517,7 @@ class AdminController extends Controller
             'category' => $data['category'],
             'category_id' => $data['category'],
             'city' => $data['city'],
+            'location_id' => $data['location_id'] ?? null,
             'address' => $data['address'] ?? null,
             ...$budgetFields,
             'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
@@ -531,6 +539,7 @@ class AdminController extends Controller
             'description' => ['required', 'string'],
             'category' => ['required', 'string', 'max:64'],
             'city' => ['required', 'string', 'max:128'],
+            'location_id' => ['nullable', 'integer', 'exists:russia_locations,id'],
             'address' => ['nullable', 'string', 'max:512'],
             'budget' => ['nullable', 'integer', 'min:0'],
             'budget_type' => ['nullable', 'in:fixed,range'],
@@ -546,6 +555,7 @@ class AdminController extends Controller
             'photos.*' => ['string', 'max:2048'],
         ]);
 
+        $data = $this->taskLocation->normalize($data);
         $settings = TreaboResponseSetting::current();
         $budgetFields = $this->normalizeBudgetInput($data);
 
@@ -555,6 +565,7 @@ class AdminController extends Controller
             'category' => $data['category'],
             'category_id' => $data['category'],
             'city' => $data['city'],
+            'location_id' => $data['location_id'] ?? null,
             'address' => $data['address'] ?? null,
             ...$budgetFields,
             'response_price_mdl' => $data['response_price_mdl'] ?? $settings->default_response_price_mdl,
@@ -621,6 +632,7 @@ class AdminController extends Controller
             'category' => (string) $task->category,
             'category_id' => $task->category_id ? (string) $task->category_id : null,
             'city' => $task->city,
+            'location_id' => $task->location_id ? (int) $task->location_id : null,
             'address' => $task->address,
             ...$this->budgetFields($task),
             'response_price_mdl' => $task->response_price_mdl,

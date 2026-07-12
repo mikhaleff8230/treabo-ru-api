@@ -24,11 +24,34 @@ class AuthController extends Controller
 
     private const OTP_MAX_ATTEMPTS = 5;
 
+    public function customerCheckPhone(Request $request) { return $this->withRole($request, 'customer', 'checkPhone'); }
+    public function specialistCheckPhone(Request $request) { return $this->withRole($request, 'specialist', 'checkPhone'); }
+    public function customerRegisterPhone(Request $request) { return $this->withRole($request, 'customer', 'registerPhone'); }
+    public function specialistRegisterPhone(Request $request) { return $this->withRole($request, 'specialist', 'registerPhone'); }
+    public function customerLogin(Request $request) { return $this->withRole($request, 'customer', 'login'); }
+    public function specialistLogin(Request $request) { return $this->withRole($request, 'specialist', 'login'); }
+    public function customerSendPhoneOtp(Request $request) { return $this->withRole($request, 'customer', 'sendPhoneOtp'); }
+    public function specialistSendPhoneOtp(Request $request) { return $this->withRole($request, 'specialist', 'sendPhoneOtp'); }
+
+    private function withRole(Request $request, string $role, string $method)
+    {
+        $request->merge(['role' => $role]);
+        return $this->{$method}($request);
+    }
+
     public function checkPhone(Request $request)
     {
-        $data = $request->validate(['phone' => ['required', 'string']]);
+        $data = $request->validate([
+            'phone' => ['required', 'string'],
+            'role' => ['required', 'in:customer,specialist'],
+        ]);
         $phone = $this->normalizePhone($data['phone']);
-        return ['registered' => Profile::where('contact', $phone)->exists()];
+        $user = $this->findUserByPhone($phone);
+
+        return [
+            'registered' => $user ? $this->proffiRole($user) === $data['role'] : false,
+            'role_conflict' => $user ? $this->proffiRole($user) !== $data['role'] : false,
+        ];
     }
 
     public function registerPhone(Request $request)
@@ -108,7 +131,7 @@ class AuthController extends Controller
             'purpose' => ['required', 'in:login,register'],
             'password' => ['nullable', 'string'],
             'name' => ['nullable', 'string'],
-            'role' => ['nullable', 'in:customer,specialist'],
+            'role' => ['required', 'in:customer,specialist'],
             'email' => ['nullable', 'email'],
             'city' => ['nullable', 'string'],
         ]);
@@ -129,7 +152,7 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        return $this->startLoginPhoneOtp($phone, $loginData['password']);
+        return $this->startLoginPhoneOtp($phone, $loginData['password'], null, $data['role']);
     }
 
     public function verifyPhoneOtp(Request $request)
@@ -181,11 +204,15 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
+        $expectedRole = $request->validate(['role' => ['required', 'in:customer,specialist']])['role'];
         if ($request->filled('email') && !$request->filled('phone')) {
             $email = Str::lower(trim($request->input('email')));
             $user = User::where('email', $email)->first();
             if (!$user) {
                 return response()->json(['detail' => 'Invalid email or user not found'], 401);
+            }
+            if ($this->proffiRole($user) !== $expectedRole) {
+                return response()->json(['detail' => 'Account role does not match this login page'], 403);
             }
             if ($user->email_verified_at) {
                 return $this->authResponse($user->load('profile'));
@@ -203,9 +230,12 @@ class AuthController extends Controller
         if (!$user || !Hash::check($data['password'], $user->password)) {
             return response()->json(['detail' => 'Invalid phone or password'], 401);
         }
+        if ($this->proffiRole($user) !== $expectedRole) {
+            return response()->json(['detail' => 'Account role does not match this login page'], 403);
+        }
 
         if ($this->treaboPhoneOtpEnabled() && !$this->isPhoneVerified($profile)) {
-            return $this->startLoginPhoneOtp($phone, $data['password'], $user);
+            return $this->startLoginPhoneOtp($phone, $data['password'], $user, $expectedRole);
         }
 
         return $this->authResponse($user->load('profile'));
@@ -560,7 +590,7 @@ class AuthController extends Controller
         return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
     }
 
-    private function startLoginPhoneOtp(string $phone, string $password, ?User $user = null)
+    private function startLoginPhoneOtp(string $phone, string $password, ?User $user = null, ?string $expectedRole = null)
     {
         if (!$user) {
             $profile = Profile::where('contact', $phone)->first();
@@ -569,6 +599,9 @@ class AuthController extends Controller
 
         if (!$user || !Hash::check($password, $user->password)) {
             return response()->json(['detail' => 'Invalid phone or password'], 401);
+        }
+        if (!$expectedRole || $this->proffiRole($user) !== $expectedRole) {
+            return response()->json(['detail' => 'Account role does not match this login page'], 403);
         }
 
         if ($this->isPhoneVerified($user->profile)) {
@@ -734,7 +767,9 @@ class AuthController extends Controller
             return false;
         }
 
-        return !($currentRole === 'specialist' && $role === 'customer');
+        // Customer and specialist identities are intentionally isolated.
+        // A phone already bound to one role cannot be upgraded to the other.
+        return $currentRole === null;
     }
 
     private function upgradeExistingPhoneUser(User $user, string $phone, array $data)

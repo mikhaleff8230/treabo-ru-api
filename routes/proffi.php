@@ -10,6 +10,8 @@ use App\Http\Controllers\Proffi\ProffiWorkController;
 use App\Http\Controllers\Proffi\ProffiWorkQuestionController;
 use App\Http\Controllers\Proffi\ApplicationController;
 use App\Http\Controllers\Proffi\AuthController;
+use App\Http\Controllers\Proffi\PushTokenController;
+use App\Http\Controllers\Proffi\PushLoginController;
 use App\Http\Controllers\Proffi\CategoryAttributeController;
 use App\Http\Controllers\Proffi\CategoryController;
 use App\Http\Controllers\Proffi\ChatController;
@@ -97,12 +99,23 @@ $proffiAdminRoutes = function () {
 
 Route::prefix('proffi')->group(function () use ($proffiAdminRoutes) {
 Route::prefix('auth')->group(function () {
-    Route::post('/check-phone', [AuthController::class, 'checkPhone']);
-    Route::post('/register-phone', [AuthController::class, 'registerPhone']);
-    Route::post('/register', [AuthController::class, 'registerEmail']);
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::prefix('customer')->group(function () {
+        Route::post('/check-phone', [AuthController::class, 'customerCheckPhone']);
+        Route::post('/register-phone', [AuthController::class, 'customerRegisterPhone']);
+        Route::post('/login', [AuthController::class, 'customerLogin']);
+        Route::post('/phone/send-otp', [AuthController::class, 'customerSendPhoneOtp']);
+        Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
+    });
+    Route::prefix('specialist')->group(function () {
+        Route::post('/check-phone', [AuthController::class, 'specialistCheckPhone']);
+        Route::post('/register-phone', [AuthController::class, 'specialistRegisterPhone']);
+        Route::post('/login', [AuthController::class, 'specialistLogin']);
+        Route::post('/phone/send-otp', [AuthController::class, 'specialistSendPhoneOtp']);
+        Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
+        Route::post('/push-login/request', [PushLoginController::class, 'request']);
+        Route::get('/push-login/{id}', [PushLoginController::class, 'status']);
+    });
     Route::post('/verify', [AuthController::class, 'verify']);
-    Route::post('/phone/send-otp', [AuthController::class, 'sendPhoneOtp']);
     Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
     Route::get('/oauth/{provider}/redirect', [AuthController::class, 'oauthRedirect']);
     Route::get('/oauth/{provider}/callback', [AuthController::class, 'oauthCallback']);
@@ -113,6 +126,10 @@ Route::prefix('auth')->group(function () {
         Route::patch('/profile', [AuthController::class, 'updateProfile']);
         Route::post('/profile', [AuthController::class, 'updateProfile']);
         Route::post('/phone/change/send-otp', [AuthController::class, 'sendChangePhoneOtp']);
+        Route::post('/push-tokens', [PushTokenController::class, 'store']);
+        Route::delete('/push-tokens', [PushTokenController::class, 'destroy']);
+        Route::post('/push-login/{login}/approve', [PushLoginController::class, 'approve']);
+        Route::post('/push-login/{login}/reject', [PushLoginController::class, 'reject']);
     });
 });
 

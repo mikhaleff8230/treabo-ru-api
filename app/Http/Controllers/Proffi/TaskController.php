@@ -14,6 +14,7 @@ use App\Models\ProffiTaskRecommendedSpecialist;
 use App\Models\TreaboResponseSetting;
 use App\Services\Proffi\MasterMatchingService;
 use App\Services\Proffi\ProffiCategorySearchService;
+use App\Services\Proffi\TaskLocationService;
 use Illuminate\Http\Request;
 
 class TaskController extends Controller
@@ -24,6 +25,7 @@ class TaskController extends Controller
     public function __construct(
         private readonly ProffiCategorySearchService $categorySearch,
         private readonly MasterMatchingService $matchingService,
+        private readonly TaskLocationService $taskLocation,
     ) {
     }
 
@@ -137,6 +139,7 @@ class TaskController extends Controller
             'category_id' => ['nullable', 'string', 'exists:proffi_categories,id'],
             'work_id' => ['nullable', 'integer', 'exists:proffi_works,id'],
             'city' => ['required', 'string', 'max:128'],
+            'location_id' => ['nullable', 'integer', 'exists:russia_locations,id'],
             'address' => ['nullable', 'string', 'max:512'],
             'budget' => ['nullable', 'integer', 'min:0'],
             'budget_type' => ['nullable', 'in:fixed,range'],
@@ -149,6 +152,8 @@ class TaskController extends Controller
             'photos' => ['nullable', 'array'],
             'ai_details' => ['nullable', 'array'],
         ]);
+
+        $data = $this->taskLocation->normalize($data);
 
         if (!empty($data['address']) && (empty($data['lat']) || empty($data['lng']))) {
             return response()->json(['detail' => 'Укажите точку на карте для выбранного адреса'], 422);
@@ -379,6 +384,7 @@ class TaskController extends Controller
                 'description' => $task->work->description,
             ] : null,
             'city' => $task->city,
+            'location_id' => $task->location_id ? (int) $task->location_id : null,
             'address' => $task->address,
             ...$this->budgetFields($task),
             'response_price_mdl' => (int) ($task->response_price_mdl ?? 15),

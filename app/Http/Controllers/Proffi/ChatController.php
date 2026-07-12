@@ -14,11 +14,16 @@ use App\Models\ProffiUserPresence;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use App\Services\Proffi\ExpoPushService;
 use Marvel\Database\Models\User;
 
 class ChatController extends Controller
 {
     private const TYPING_TTL_SECONDS = 5;
+
+    public function __construct(private readonly ExpoPushService $push)
+    {
+    }
 
     public function index(Request $request)
     {
@@ -100,6 +105,14 @@ class ChatController extends Controller
         $this->safeBroadcast(new MessageSent($message, $chat));
 
         $this->notifyRecipientByEmail($chat, $request->user(), $text);
+        $recipientId = (int) $chat->customer_id === $senderId ? (int) $chat->specialist_id : (int) $chat->customer_id;
+        $senderName = trim((string) ($request->user()->name ?? 'Treabo')) ?: 'Treabo';
+        $this->push->sendToUser($recipientId, $senderName, $text, [
+            'type' => 'chat_message',
+            'chat_id' => (string) $chat->id,
+            'message_id' => (string) $message->id,
+            'url' => 'treabo://chat/' . $chat->id,
+        ]);
 
         return response()->json($this->mapMessage($message), 201);
     }

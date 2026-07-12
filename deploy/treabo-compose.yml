@@ -124,6 +124,7 @@ services:
         NEXT_PUBLIC_REST_API_ENDPOINT: ${ADMIN_API_URL:-https://api.treabo.ru}
         NEXT_PUBLIC_API_URL: ${ADMIN_API_URL:-https://api.treabo.ru}
         NEXT_PUBLIC_SHOP_URL: ${ADMIN_SHOP_URL:-https://treabo.ru}
+        NEXT_PUBLIC_YANDEX_MAPS_API_KEY: ${NEXT_PUBLIC_YANDEX_MAPS_API_KEY:-}
     env_file:
       - ../../admin/.env.production
     environment:
