@@ -43,11 +43,16 @@ class JobDraftAiService
         ];
 
         try {
+            $responsesUrl = rtrim(
+                (string) config('services.openai.base_url', 'https://api.openai.com/v1'),
+                '/'
+            ).'/responses';
+
             $response = Http::withToken($apiKey)
                 ->acceptJson()
                 ->asJson()
                 ->timeout(45)
-                ->post('https://api.openai.com/v1/responses', $payload);
+                ->post($responsesUrl, $payload);
         } catch (\Throwable $e) {
             Log::error('OpenAI job draft request failed', [
                 'message' => $e->getMessage(),
