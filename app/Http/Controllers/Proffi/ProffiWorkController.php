@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Proffi;
 use App\Http\Controllers\Controller;
 use App\Models\ProffiWork;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class ProffiWorkController extends Controller
 {
@@ -59,7 +60,20 @@ class ProffiWorkController extends Controller
         $data['sort_order'] = $data['sort_order'] ?? 0;
         $data['is_active'] = $data['is_active'] ?? true;
         $data['aliases'] = $data['aliases'] ?? null;
+        if (empty($data['slug'])) {
+            $data['slug'] = $this->uniqueSlug(Str::slug($data['title']) ?: 'work');
+        }
 
         return $data;
+    }
+
+    private function uniqueSlug(string $base): string
+    {
+        $slug = $base;
+        $suffix = 2;
+        while (ProffiWork::where('slug', $slug)->exists()) {
+            $slug = $base . '-' . $suffix++;
+        }
+        return $slug;
     }
 }

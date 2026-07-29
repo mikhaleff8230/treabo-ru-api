@@ -37,6 +37,11 @@ class ProffiTask extends Model
         return $this->belongsTo(ProffiWork::class, 'work_id');
     }
 
+    public function categoryEntity(): BelongsTo
+    {
+        return $this->belongsTo(ProffiCategory::class, 'category_id', 'id');
+    }
+
     public function location(): BelongsTo
     {
         return $this->belongsTo(RussiaLocation::class, 'location_id');

@@ -5,6 +5,7 @@ namespace App\Services\Ai;
 use App\Models\ProffiCategory;
 use App\Models\ProffiWork;
 use App\Models\ProffiWorkQuestion;
+use App\Models\AiChatKnowledge;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -26,11 +27,18 @@ class JobDraftAiService
 
         $payload = [
             'model' => $model,
-            'temperature' => 0.2,
-            'response_format' => ['type' => 'json_object'],
-            'messages' => [
-                ['role' => 'system', 'content' => $this->systemPrompt()],
-                ['role' => 'user', 'content' => $this->userPrompt($data)],
+            'reasoning' => ['effort' => 'low'],
+            'max_output_tokens' => 1800,
+            'instructions' => $this->systemPrompt($data),
+            'input' => $this->userPrompt($data),
+            'text' => [
+                'verbosity' => 'low',
+                'format' => [
+                    'type' => 'json_schema',
+                    'name' => 'treabo_job_draft',
+                    'strict' => true,
+                    'schema' => $this->responseSchema(),
+                ],
             ],
         ];
 
@@ -39,7 +47,7 @@ class JobDraftAiService
                 ->acceptJson()
                 ->asJson()
                 ->timeout(45)
-                ->post('https://api.openai.com/v1/chat/completions', $payload);
+                ->post('https://api.openai.com/v1/responses', $payload);
         } catch (\Throwable $e) {
             Log::error('OpenAI job draft request failed', [
                 'message' => $e->getMessage(),
@@ -60,8 +68,10 @@ class JobDraftAiService
         }
 
         $body = $response->json();
-        $this->tokensUsed = $body['usage']['total_tokens'] ?? null;
-        $content = $body['choices'][0]['message']['content'] ?? null;
+        $this->tokensUsed = isset($body['usage'])
+            ? (int) (($body['usage']['input_tokens'] ?? 0) + ($body['usage']['output_tokens'] ?? 0))
+            : null;
+        $content = $this->responseOutputText($body);
 
         if (!is_string($content) || trim($content) === '') {
             Log::error('OpenAI job draft empty content', [
@@ -89,7 +99,7 @@ class JobDraftAiService
 
     public function model(): string
     {
-        return (string) config('services.openai.model', 'gpt-4o-mini');
+        return (string) config('services.openai.model', 'gpt-5.6-luna');
     }
 
     public function tokensUsed(): ?int
@@ -155,6 +165,8 @@ class JobDraftAiService
             'master_summary' => $this->shortText($draft['master_summary'] ?? '', 600),
             'missing_questions' => $missingQuestions,
             'confidence' => max(0, min(1, round($confidence, 2))),
+            'assistant_message' => $this->shortText($draft['assistant_message'] ?? '', 500),
+            'needs_clarification' => (bool) ($draft['needs_clarification'] ?? false),
         ];
     }
 
@@ -346,9 +358,9 @@ class JobDraftAiService
         return mb_substr(trim($value), 0, $limit);
     }
 
-    private function systemPrompt(): string
+    private function systemPrompt(array $data = []): string
     {
-        return <<<'PROMPT'
+        $basePrompt = <<<'PROMPT'
 Ты AI-помощник сервиса Treabo для оформления заявок на услуги мастеров в России.
 Пользователь пишет на русском и может писать плохо, коротко или с ошибками.
 Твоя задача — превратить хаотичный текст в понятную заявку для мастера.
@@ -359,6 +371,43 @@ class JobDraftAiService
 Выбирай category_id и work_id только из переданных списков. Если не уверен — верни null.
 Не придумывай вопросы в missing_questions — backend подставит их из справочника по выбранной работе.
 PROMPT;
+
+        $categoryHint = trim((string) ($data['category_hint'] ?? ''));
+        $categoryScopes = [$categoryHint];
+        if ($categoryHint !== '') {
+            $hintCategory = ProffiCategory::query()
+                ->where('id', $categoryHint)
+                ->orWhere('slug', $categoryHint)
+                ->first(['id', 'slug']);
+            if ($hintCategory) {
+                $categoryScopes = array_values(array_unique([
+                    (string) $hintCategory->id,
+                    (string) $hintCategory->slug,
+                ]));
+            }
+        }
+        $instructions = AiChatKnowledge::query()
+            ->where('type', 'instruction')
+            ->where('is_active', true)
+            ->where(function ($query) use ($categoryHint, $categoryScopes) {
+                $query->whereNull('category_slug')->orWhere('category_slug', '');
+                if ($categoryHint !== '') {
+                    $query->orWhereIn('category_slug', $categoryScopes);
+                }
+            })
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->limit(30)
+            ->pluck('content')
+            ->filter(fn ($content) => is_string($content) && trim($content) !== '')
+            ->map(fn ($content) => trim(mb_substr($content, 0, 2000)))
+            ->implode("\n\n");
+
+        if ($instructions === '') {
+            return $basePrompt;
+        }
+
+        return $basePrompt . "\n\nДополнительные бизнес-инструкции Treabo из админки:\n" . mb_substr($instructions, 0, 10000);
     }
 
     private function userPrompt(array $data): string
@@ -376,6 +425,8 @@ PROMPT;
             'master_summary' => 'string',
             'missing_questions' => [],
             'confidence' => 'number between 0 and 1',
+            'assistant_message' => 'string',
+            'needs_clarification' => 'boolean',
         ];
 
         return json_encode([
@@ -396,11 +447,56 @@ PROMPT;
                 'Choose work_id from works list. Match by title, slug or aliases.',
                 'If unsure about category or work, set category_id/work_id to null and lower confidence.',
                 'Do not generate missing_questions — leave as empty array.',
+                'Set assistant_message to one concise clarification question when information is missing, otherwise briefly confirm the classification.',
+                'Set needs_clarification to true only when another answer would materially improve the request.',
             ],
             'categories' => $catalog['categories'],
             'works' => $catalog['works'],
             'response_schema' => $schema,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function responseSchema(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => [
+                'detected_language', 'title', 'category_id', 'work_id', 'city', 'urgency',
+                'description', 'master_summary', 'missing_questions', 'confidence',
+                'assistant_message', 'needs_clarification',
+            ],
+            'properties' => [
+                'detected_language' => ['type' => 'string', 'enum' => self::LANGUAGES],
+                'title' => ['type' => 'string'],
+                'category_id' => ['type' => ['string', 'null']],
+                'work_id' => ['type' => ['integer', 'null']],
+                'city' => ['type' => ['string', 'null']],
+                'urgency' => ['type' => 'string', 'enum' => self::URGENCIES],
+                'description' => ['type' => 'string'],
+                'master_summary' => ['type' => 'string'],
+                'missing_questions' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'confidence' => ['type' => 'number', 'minimum' => 0, 'maximum' => 1],
+                'assistant_message' => ['type' => 'string'],
+                'needs_clarification' => ['type' => 'boolean'],
+            ],
+        ];
+    }
+
+    private function responseOutputText(array $body): ?string
+    {
+        foreach ($body['output'] ?? [] as $item) {
+            if (($item['type'] ?? null) !== 'message') {
+                continue;
+            }
+            foreach ($item['content'] ?? [] as $content) {
+                if (($content['type'] ?? null) === 'output_text' && is_string($content['text'] ?? null)) {
+                    return $content['text'];
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

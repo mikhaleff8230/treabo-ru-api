@@ -86,13 +86,12 @@ class RedsmsGateway implements OtpInterface
         $url = rtrim($this->baseUrl, '/') . '/' . ltrim($endpoint, '/');
         $authParams = $this->getAuthParams();
 
-        // Merge auth params with request data
-        $requestData = array_merge($authParams, $data);
-
         try {
             $response = Http::timeout(10)
                 ->retry(3, 1000)
-                ->{strtolower($method)}($url, $requestData);
+                ->acceptJson()
+                ->withHeaders($authParams)
+                ->{strtolower($method)}($url, $data);
 
             $responseData = $response->json();
 
@@ -140,29 +139,41 @@ class RedsmsGateway implements OtpInterface
      */
     public function startVerification($phone_number)
     {
+        return $this->startVerificationVia($phone_number, 'sms');
+    }
+
+    /**
+     * Start verification via SMS or Telegram Gateway.
+     */
+    public function startVerificationVia($phone_number, string $channel = 'sms')
+    {
         try {
+            if (!in_array($channel, ['sms', 'telegram'], true)) {
+                throw new Exception('Unsupported verification channel');
+            }
+
             // Generate OTP code
             $otpCode = $this->generateOtpCode(6);
             
             // Format phone number (remove + if present, add 7 for Russian numbers if needed)
             $phone = $this->formatPhoneNumber($phone_number);
             
-            // Create message text with OTP code using template
-            $messageText = str_replace('{code}', $otpCode, $this->smsTemplate);
-            
-            // Send SMS with OTP code
+            $messageText = $channel === 'telegram'
+                ? $otpCode
+                : str_replace('{code}', $otpCode, $this->smsTemplate);
+
             $data = [
-                'route' => 'sms',
+                'route' => $channel === 'telegram' ? 'tgauth' : 'sms',
                 'to' => $phone,
                 'text' => $messageText,
             ];
 
-            // Отправитель обязателен для REDSMS
-            if (empty($this->sender)) {
-                throw new Exception('REDSMS sender is not configured. Please set REDSMS_SENDER in .env file');
+            if ($channel === 'sms') {
+                if (empty($this->sender)) {
+                    throw new Exception('REDSMS sender is not configured. Please set REDSMS_SENDER in .env file');
+                }
+                $data['from'] = $this->sender;
             }
-            
-            $data['from'] = $this->sender;
 
             $response = $this->sendRequest('POST', '/message', $data);
 
@@ -190,6 +201,7 @@ class RedsmsGateway implements OtpInterface
             cache()->put("redsms_otp_{$uuid}", [
                 'code' => $otpCode,
                 'phone' => $phone,
+                'channel' => $channel,
                 'created_at' => now(),
             ], now()->addMinutes(5));
             

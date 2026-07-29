@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Proffi;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Proffi\Concerns\MapsProffiUsers;
 use App\Http\Controllers\Proffi\Concerns\UsesTreaboPhoneOtp;
+use App\Models\ProffiCategory;
+use App\Models\ProffiWork;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
 use Marvel\Database\Models\Profile;
 use Marvel\Database\Models\Provider;
@@ -134,9 +137,11 @@ class AuthController extends Controller
             'role' => ['required', 'in:customer,specialist'],
             'email' => ['nullable', 'email'],
             'city' => ['nullable', 'string'],
+            'channel' => ['nullable', 'in:sms,telegram'],
         ]);
 
         $phone = $this->normalizePhone($data['phone']);
+        $channel = $data['channel'] ?? 'sms';
 
         if ($data['purpose'] === 'register') {
             $registerData = $request->validate([
@@ -145,14 +150,14 @@ class AuthController extends Controller
                 'role' => ['required', 'in:customer,specialist'],
             ]);
 
-            return $this->startRegisterPhoneOtp($phone, array_merge($data, $registerData));
+            return $this->startRegisterPhoneOtp($phone, array_merge($data, $registerData), null, $channel);
         }
 
         $loginData = $request->validate([
             'password' => ['required', 'string'],
         ]);
 
-        return $this->startLoginPhoneOtp($phone, $loginData['password'], null, $data['role']);
+        return $this->startLoginPhoneOtp($phone, $loginData['password'], null, $data['role'], $channel);
     }
 
     public function verifyPhoneOtp(Request $request)
@@ -200,6 +205,81 @@ class AuthController extends Controller
         }
 
         return $this->completeLoginPhoneOtp($phone, (int) ($context['user_id'] ?? 0));
+    }
+
+    public function sendCustomerPasswordResetOtp(Request $request)
+    {
+        if (!$this->treaboPhoneOtpEnabled()) {
+            return response()->json(['detail' => 'Phone verification is disabled'], 404);
+        }
+
+        $data = $request->validate([
+            'phone' => ['required', 'string'],
+            'channel' => ['nullable', 'in:sms,telegram'],
+        ]);
+        $phone = $this->normalizePhone($data['phone']);
+        $user = $this->findUserByPhone($phone);
+
+        if (!$user || $this->proffiRole($user) !== 'customer') {
+            return response()->json(['detail' => 'Client account not found'], 404);
+        }
+
+        $channel = $data['channel'] ?? 'telegram';
+        $sent = $this->dispatchTreaboPhoneOtp($phone, $channel);
+        if (!$sent['ok']) {
+            return response()->json(['detail' => 'Verification code could not be sent'], 502);
+        }
+
+        $this->cacheTreaboOtpContext($sent['otp_id'], [
+            'purpose' => 'reset_password',
+            'phone' => $phone,
+            'user_id' => $user->id,
+            'attempts' => 0,
+        ]);
+
+        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? $channel));
+    }
+
+    public function resetCustomerPassword(Request $request)
+    {
+        $data = $request->validate([
+            'phone' => ['required', 'string'],
+            'otp_id' => ['required', 'string'],
+            'code' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:6', 'confirmed'],
+        ]);
+        $phone = $this->normalizePhone($data['phone']);
+        $context = $this->getTreaboOtpContext($data['otp_id']);
+
+        if (
+            !$context ||
+            ($context['purpose'] ?? null) !== 'reset_password' ||
+            ($context['phone'] ?? null) !== $phone
+        ) {
+            return response()->json(['detail' => 'Invalid or expired verification session'], 400);
+        }
+
+        $attempts = (int) ($context['attempts'] ?? 0);
+        if ($attempts >= self::OTP_MAX_ATTEMPTS) {
+            $this->forgetTreaboOtpContext($data['otp_id']);
+            return response()->json(['detail' => 'Too many attempts'], 429);
+        }
+
+        if (!$this->verifyTreaboPhoneOtpCode($data['otp_id'], $data['code'], $phone)) {
+            $context['attempts'] = $attempts + 1;
+            $this->cacheTreaboOtpContext($data['otp_id'], $context);
+            return response()->json(['detail' => 'Invalid code'], 400);
+        }
+
+        $user = User::find((int) ($context['user_id'] ?? 0));
+        if (!$user || $this->proffiRole($user) !== 'customer') {
+            return response()->json(['detail' => 'Client account not found'], 404);
+        }
+
+        $user->forceFill(['password' => Hash::make($data['password'])])->save();
+        $this->forgetTreaboOtpContext($data['otp_id']);
+
+        return $this->authResponse($user->fresh('profile'));
     }
 
     public function login(Request $request)
@@ -423,6 +503,33 @@ class AuthController extends Controller
             'lat' => ['nullable', 'numeric'],
             'lng' => ['nullable', 'numeric'],
         ]);
+
+        if (array_key_exists('services', $data)) {
+            $allowedServices = ProffiCategory::query()
+                ->pluck('name_ru')
+                ->merge(ProffiWork::query()->where('is_active', true)->pluck('title'))
+                ->filter()
+                ->map(fn ($value) => mb_strtolower(trim((string) $value)))
+                ->unique();
+
+            $invalidServices = collect($data['services'] ?? [])
+                ->filter(fn ($value) => !$allowedServices->contains(mb_strtolower(trim((string) $value))))
+                ->values();
+
+            if ($invalidServices->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'services' => ['Выберите услуги из существующих категорий и работ.'],
+                ]);
+            }
+
+            $data['services'] = collect($data['services'] ?? [])
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+
         $profile = $request->user()->profile()->firstOrCreate(['customer_id' => $request->user()->id]);
         $patch = [];
         if (array_key_exists('bio', $data)) $patch['bio'] = $data['bio'];
@@ -504,7 +611,7 @@ class AuthController extends Controller
         return $this->authResponse($user->fresh('profile'));
     }
 
-    private function startRegisterPhoneOtp(string $phone, array $data, ?User $existingByEmail = null)
+    private function startRegisterPhoneOtp(string $phone, array $data, ?User $existingByEmail = null, string $channel = 'sms')
     {
         $existingUser = $this->findUserByPhone($phone);
         if ($existingUser) {
@@ -513,7 +620,7 @@ class AuthController extends Controller
                 return response()->json(['detail' => 'Phone already registered'], 400);
             }
 
-            $sent = $this->dispatchTreaboPhoneOtp($phone);
+            $sent = $this->dispatchTreaboPhoneOtp($phone, $channel);
             if (!$sent['ok']) {
                 return response()->json(['detail' => $sent['detail'] ?? 'SMS send failed'], 502);
             }
@@ -532,7 +639,7 @@ class AuthController extends Controller
                 ],
             ]);
 
-            return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
+            return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? $channel));
         }
 
         $email = $data['email'] ?? $this->emailFromPhone($phone);
@@ -546,7 +653,7 @@ class AuthController extends Controller
                 return response()->json(['detail' => 'Phone already registered'], 400);
             }
 
-            $sent = $this->dispatchTreaboPhoneOtp($phone);
+            $sent = $this->dispatchTreaboPhoneOtp($phone, $channel);
             if (!$sent['ok']) {
                 return response()->json(['detail' => $sent['detail'] ?? 'SMS send failed'], 502);
             }
@@ -566,10 +673,10 @@ class AuthController extends Controller
                 ],
             ]);
 
-            return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
+            return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? $channel));
         }
 
-        $sent = $this->dispatchTreaboPhoneOtp($phone);
+        $sent = $this->dispatchTreaboPhoneOtp($phone, $channel);
         if (!$sent['ok']) {
             return response()->json(['detail' => $sent['detail'] ?? 'SMS send failed'], 502);
         }
@@ -587,10 +694,10 @@ class AuthController extends Controller
             ],
         ]);
 
-        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
+        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? $channel));
     }
 
-    private function startLoginPhoneOtp(string $phone, string $password, ?User $user = null, ?string $expectedRole = null)
+    private function startLoginPhoneOtp(string $phone, string $password, ?User $user = null, ?string $expectedRole = null, string $channel = 'sms')
     {
         if (!$user) {
             $profile = Profile::where('contact', $phone)->first();
@@ -608,7 +715,7 @@ class AuthController extends Controller
             return $this->authResponse($user->load('profile'));
         }
 
-        $sent = $this->dispatchTreaboPhoneOtp($phone);
+        $sent = $this->dispatchTreaboPhoneOtp($phone, $channel);
         if (!$sent['ok']) {
             return response()->json(['detail' => $sent['detail'] ?? 'SMS send failed'], 502);
         }
@@ -620,7 +727,7 @@ class AuthController extends Controller
             'attempts' => 0,
         ]);
 
-        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
+        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? $channel));
     }
 
     private function completeRegisterPhoneOtp(string $phone, array $registration)

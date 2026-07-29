@@ -43,11 +43,18 @@ trait UsesTreaboPhoneOtp
         Cache::forget($this->treaboOtpContextKey($otpId));
     }
 
-    protected function dispatchTreaboPhoneOtp(string $phone): array
+    protected function dispatchTreaboPhoneOtp(string $phone, string $channel = 'sms'): array
     {
         try {
+            $channel = $channel === 'telegram' ? 'telegram' : 'sms';
+            $dedupeKey = 'treabo_otp_dispatch:' . sha1($phone . '|' . $channel);
+            $existingOtpId = Cache::get($dedupeKey);
+            if (is_string($existingOtpId) && $existingOtpId !== '') {
+                return ['ok' => true, 'otp_id' => $existingOtpId, 'channel' => $channel, 'reused' => true];
+            }
+
             $otpGateway = $this->getTreaboOtpGateway();
-            $result = $otpGateway->startVerification($phone);
+            $result = $otpGateway->startVerificationVia($phone, $channel);
 
             if (!$result->isValid()) {
                 $errors = $result->getErrors();
@@ -68,7 +75,9 @@ trait UsesTreaboPhoneOtp
                 return ['ok' => false, 'detail' => 'SMS send failed'];
             }
 
-            return ['ok' => true, 'otp_id' => $otpId];
+            Cache::put($dedupeKey, $otpId, now()->addMinutes(5));
+
+            return ['ok' => true, 'otp_id' => $otpId, 'channel' => $channel, 'reused' => false];
         } catch (\Throwable $e) {
             Log::error('Treabo OTP gateway error', [
                 'phone' => $phone,
@@ -97,12 +106,13 @@ trait UsesTreaboPhoneOtp
         }
     }
 
-    protected function treaboOtpSentPayload(string $phone, string $otpId): array
+    protected function treaboOtpSentPayload(string $phone, string $otpId, string $channel = 'sms'): array
     {
         return [
             'status' => 'otp_sent',
             'phone' => $phone,
             'otp_id' => $otpId,
+            'channel' => $channel,
         ];
     }
 }

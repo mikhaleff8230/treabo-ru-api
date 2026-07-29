@@ -22,6 +22,15 @@ class OtpGateway
 		return $this->gateway->startVerification($phone_number);
 	}
 
+	public function startVerificationVia($phone_number, string $channel = 'sms')
+	{
+		if (method_exists($this->gateway, 'startVerificationVia')) {
+			return $this->gateway->startVerificationVia($phone_number, $channel);
+		}
+
+		return $this->gateway->startVerification($phone_number);
+	}
+
 	public function checkVerification($id, $code, $phone_number)
 	{
 		return $this->gateway->checkVerification($id, $code, $phone_number);

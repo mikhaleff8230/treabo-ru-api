@@ -52,10 +52,8 @@ $proffiAdminRoutes = function () {
     Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
     Route::delete('/categories/{id}', [AdminController::class, 'deleteCategory']);
 
-    Route::get('/filters', [AdminController::class, 'filters']);
-    Route::post('/filters', [AdminController::class, 'createFilter']);
-    Route::put('/filters/{id}', [AdminController::class, 'updateFilter']);
-    Route::delete('/filters/{id}', [AdminController::class, 'deleteFilter']);
+    Route::get('/branding-settings', [AdminController::class, 'brandingSettings']);
+    Route::put('/branding-settings', [AdminController::class, 'updateBrandingSettings']);
 
     Route::get('/response-settings', [AdminController::class, 'responseSettings']);
     Route::put('/response-settings', [AdminController::class, 'updateResponseSettings']);
@@ -101,19 +99,21 @@ Route::prefix('proffi')->group(function () use ($proffiAdminRoutes) {
 Route::prefix('auth')->group(function () {
     Route::prefix('customer')->group(function () {
         Route::post('/check-phone', [AuthController::class, 'customerCheckPhone']);
-        Route::post('/register-phone', [AuthController::class, 'customerRegisterPhone']);
-        Route::post('/login', [AuthController::class, 'customerLogin']);
-        Route::post('/phone/send-otp', [AuthController::class, 'customerSendPhoneOtp']);
+        Route::post('/register-phone', [AuthController::class, 'customerRegisterPhone'])->middleware('throttle:5,1');
+        Route::post('/login', [AuthController::class, 'customerLogin'])->middleware('throttle:10,1');
+        Route::post('/phone/send-otp', [AuthController::class, 'customerSendPhoneOtp'])->middleware('throttle:3,10');
         Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
+        Route::post('/password/send-code', [AuthController::class, 'sendCustomerPasswordResetOtp'])->middleware('throttle:3,10');
+        Route::post('/password/reset', [AuthController::class, 'resetCustomerPassword'])->middleware('throttle:5,10');
     });
     Route::prefix('specialist')->group(function () {
         Route::post('/check-phone', [AuthController::class, 'specialistCheckPhone']);
-        Route::post('/register-phone', [AuthController::class, 'specialistRegisterPhone']);
-        Route::post('/login', [AuthController::class, 'specialistLogin']);
-        Route::post('/phone/send-otp', [AuthController::class, 'specialistSendPhoneOtp']);
+        Route::post('/register-phone', [AuthController::class, 'specialistRegisterPhone'])->middleware('throttle:5,1');
+        Route::post('/login', [AuthController::class, 'specialistLogin'])->middleware('throttle:10,1');
+        Route::post('/phone/send-otp', [AuthController::class, 'specialistSendPhoneOtp'])->middleware('throttle:3,10');
         Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
-        Route::post('/push-login/request', [PushLoginController::class, 'request']);
-        Route::get('/push-login/{id}', [PushLoginController::class, 'status']);
+        Route::post('/push-login/request', [PushLoginController::class, 'request'])->middleware('throttle:5,1');
+        Route::get('/push-login/{id}', [PushLoginController::class, 'status'])->middleware('throttle:60,1');
     });
     Route::post('/verify', [AuthController::class, 'verify']);
     Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);

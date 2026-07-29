@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ProffiWork;
 use App\Models\ProffiWorkQuestion;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class ProffiWorkQuestionController extends Controller
@@ -81,6 +82,16 @@ class ProffiWorkQuestionController extends Controller
         $data['is_required'] = $data['is_required'] ?? false;
         $data['is_active'] = $data['is_active'] ?? true;
         $data['options'] = $data['options'] ?? null;
+        if (empty($data['field_key'])) {
+            $base = Str::slug($data['question'], '_') ?: 'question';
+            $fieldKey = mb_substr($base, 0, 112);
+            $candidate = $fieldKey;
+            $suffix = 2;
+            while (ProffiWorkQuestion::where('work_id', $data['work_id'])->where('field_key', $candidate)->exists()) {
+                $candidate = $fieldKey . '_' . $suffix++;
+            }
+            $data['field_key'] = $candidate;
+        }
 
         return $data;
     }

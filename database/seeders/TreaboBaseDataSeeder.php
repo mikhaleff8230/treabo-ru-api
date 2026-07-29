@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Models\ProffiApplication;
 use App\Models\ProffiCategory;
 use App\Models\ProffiChat;
-use App\Models\ProffiFilter;
 use App\Models\ProffiMessage;
 use App\Models\ProffiTask;
 use Illuminate\Database\Seeder;
@@ -166,13 +165,6 @@ class TreaboBaseDataSeeder extends Seeder
             ProffiCategory::updateOrCreate(['id' => $category['id']], $category);
         }
 
-        foreach ([
-            ['id' => 'with-photo', 'name' => 'Фото объекта', 'key' => 'has_photo', 'value' => '1'],
-            ['id' => 'urgent', 'name' => 'Срочно', 'key' => 'deadline', 'value' => 'urgent'],
-            ['id' => 'materials-ready', 'name' => 'Материалы есть', 'key' => 'materials', 'value' => 'ready'],
-        ] as $filter) {
-            ProffiFilter::updateOrCreate(['id' => $filter['id']], $filter);
-        }
     }
 
     private function user(

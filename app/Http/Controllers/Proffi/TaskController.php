@@ -31,7 +31,7 @@ class TaskController extends Controller
 
     public function index(Request $request)
     {
-        $query = ProffiTask::with(['customer.profile', 'work'])->where('status', 'open');
+        $query = ProffiTask::with(['customer.profile', 'work', 'categoryEntity'])->where('status', 'open');
 
         $categoryIds = $this->categorySearch->resolveCategoryIds(
             $request->query('category_id') ?: ($request->filled('category') ? (string) $request->query('category') : null),
@@ -132,6 +132,12 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
+        if ($this->proffiRole($request->user()) === 'specialist') {
+            return response()->json([
+                'detail' => 'Мастер не может создавать заявки. Переключитесь на аккаунт клиента.',
+            ], 403);
+        }
+
         $data = $request->validate([
             'title' => ['required', 'string', 'max:512'],
             'description' => ['required', 'string'],
@@ -181,7 +187,7 @@ class TaskController extends Controller
             'status' => 'open',
         ]);
 
-        $task->load(['customer.profile', 'work']);
+        $task->load(['customer.profile', 'work', 'categoryEntity']);
         $this->matchingService->assignRecommendedSpecialists($task);
 
         return response()->json($this->mapTask($task), 201);
@@ -189,7 +195,7 @@ class TaskController extends Controller
 
     public function mine(Request $request)
     {
-        return ProffiTask::with(['customer.profile', 'work'])
+        return ProffiTask::with(['customer.profile', 'work', 'categoryEntity'])
             ->where('customer_id', $request->user()->id)
             ->latest()
             ->get()
@@ -213,7 +219,7 @@ class TaskController extends Controller
                 ->exists();
         }
 
-        return $this->mapTask($task->load(['customer.profile', 'work']), $userLat, $userLng, $hasApplied, $isFavorite);
+        return $this->mapTask($task->load(['customer.profile', 'work', 'categoryEntity']), $userLat, $userLng, $hasApplied, $isFavorite);
     }
 
     public function updateBudget(Request $request, ProffiTask $task)
@@ -376,6 +382,7 @@ class TaskController extends Controller
             'description' => strip_tags((string) $task->description),
             'category' => (string) $task->category,
             'category_id' => $task->category_id ? (string) $task->category_id : null,
+            'category_name' => $task->categoryEntity?->name_ru,
             'work_id' => $task->work_id ? (int) $task->work_id : null,
             'work_title' => $task->work?->title,
             'work' => $task->work ? [

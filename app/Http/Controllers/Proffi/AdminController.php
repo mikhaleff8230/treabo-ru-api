@@ -9,7 +9,6 @@ use App\Models\ProffiApplication;
 use App\Models\BalanceDeposit;
 use App\Models\SellerBalance;
 use App\Models\ProffiChat;
-use App\Models\ProffiFilter;
 use App\Models\ProffiMessage;
 use App\Models\ProffiTask;
 use App\Http\Controllers\Proffi\Concerns\MapsProffiBudget;
@@ -24,6 +23,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Marvel\Database\Models\Profile;
+use Marvel\Database\Models\Settings;
 use Marvel\Database\Models\User;
 use Marvel\Enums\Permission;
 use Spatie\Permission\Models\Permission as SpatiePermission;
@@ -42,7 +42,6 @@ class AdminController extends Controller
         return [
             'users' => User::count(),
             'categories' => ProffiCategory::count(),
-            'filters' => ProffiFilter::count(),
             'tasks' => ProffiTask::count(),
             'applications' => ProffiApplication::count(),
             'chats' => ProffiChat::count(),
@@ -250,8 +249,8 @@ class AdminController extends Controller
     public function createCategory(Request $request)
     {
         $data = $request->validate([
-            'id' => ['required', 'string', 'max:64'],
-            'parent_id' => ['nullable', 'string', 'max:64'],
+            'id' => ['nullable', 'string', 'max:64', 'unique:proffi_categories,id'],
+            'parent_id' => ['nullable', 'string', 'max:64', 'exists:proffi_categories,id'],
             'icon' => ['nullable', 'string', 'max:64'],
             'image' => ['nullable', 'string', 'max:2048'],
             'name_ru' => ['required', 'string'],
@@ -261,14 +260,18 @@ class AdminController extends Controller
             'sort_order' => ['nullable', 'integer'],
         ]);
 
+        $baseSlug = Str::slug(($data['slug'] ?? '') ?: $data['name_ru']) ?: 'category';
+        $slug = $this->uniqueCategorySlug($baseSlug);
+        $categoryId = trim((string) ($data['id'] ?? '')) ?: $this->uniqueCategoryId($slug);
+
         $category = ProffiCategory::create([
-            'id' => $data['id'],
+            'id' => $categoryId,
             'parent_id' => $data['parent_id'] ?? null,
             'icon' => $data['icon'] ?: 'MoreHorizontal',
             'image' => $data['image'] ?? null,
             'name_ru' => $data['name_ru'],
             'name_ro' => $data['name_ro'] ?? $data['name_ru'],
-            'slug' => $data['slug'] ?? $data['id'],
+            'slug' => $slug,
             'is_active' => $data['is_active'] ?? true,
             'sort_order' => $data['sort_order'] ?? 0,
         ]);
@@ -296,7 +299,7 @@ class AdminController extends Controller
             'image' => $data['image'] ?? null,
             'name_ru' => $data['name_ru'],
             'name_ro' => $data['name_ro'] ?? $data['name_ru'],
-            'slug' => $data['slug'] ?? $category->slug,
+            'slug' => !empty($data['slug']) ? $this->uniqueCategorySlug(Str::slug($data['slug']), $category->id) : $category->slug,
             'is_active' => $data['is_active'] ?? true,
             'sort_order' => $data['sort_order'] ?? 0,
         ]);
@@ -310,9 +313,26 @@ class AdminController extends Controller
         return ['ok' => true];
     }
 
-    public function filters()
+    private function uniqueCategorySlug(string $base, ?string $ignoreId = null): string
     {
-        return ProffiFilter::orderBy('name')->get();
+        $base = $base ?: 'category';
+        $slug = $base;
+        $suffix = 2;
+        while (ProffiCategory::where('slug', $slug)->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))->exists()) {
+            $slug = $base . '-' . $suffix++;
+        }
+        return $slug;
+    }
+
+    private function uniqueCategoryId(string $base): string
+    {
+        $id = mb_substr($base ?: 'category', 0, 64);
+        $suffix = 2;
+        while (ProffiCategory::whereKey($id)->exists()) {
+            $tail = '-' . $suffix++;
+            $id = mb_substr($base, 0, 64 - mb_strlen($tail)) . $tail;
+        }
+        return $id;
     }
 
     public function responseSettings()
@@ -435,42 +455,47 @@ class AdminController extends Controller
             ->values();
     }
 
-    public function createFilter(Request $request)
+    public function brandingSettings()
     {
-        $data = $request->validate([
-            'id' => ['nullable', 'string', 'max:64'],
-            'name' => ['required', 'string'],
-            'key' => ['required', 'string'],
-            'value' => ['required', 'string'],
-        ]);
+        $settings = Settings::getData(DEFAULT_LANGUAGE);
+        $options = is_array($settings?->options) ? $settings->options : [];
 
-        $filter = ProffiFilter::create([
-            'id' => $data['id'] ?? Str::slug($data['name'] . '-' . Str::random(4)),
-            'name' => $data['name'],
-            'key' => $data['key'],
-            'value' => $data['value'],
-        ]);
-
-        return response()->json($filter, 201);
+        return [
+            'logo' => $options['logo'] ?? null,
+            'dark_logo' => $options['dark_logo'] ?? null,
+        ];
     }
 
-    public function updateFilter(Request $request, string $id)
+    public function updateBrandingSettings(Request $request)
     {
         $data = $request->validate([
-            'name' => ['required', 'string'],
-            'key' => ['required', 'string'],
-            'value' => ['required', 'string'],
+            'logo' => ['nullable', 'array'],
+            'logo.id' => ['nullable'],
+            'logo.original' => ['required_with:logo', 'string', 'max:2048'],
+            'logo.thumbnail' => ['nullable', 'string', 'max:2048'],
+            'dark_logo' => ['nullable', 'array'],
+            'dark_logo.id' => ['nullable'],
+            'dark_logo.original' => ['required_with:dark_logo', 'string', 'max:2048'],
+            'dark_logo.thumbnail' => ['nullable', 'string', 'max:2048'],
         ]);
 
-        $filter = ProffiFilter::findOrFail($id);
-        $filter->update($data);
-        return $filter;
-    }
+        $settings = Settings::getData(DEFAULT_LANGUAGE);
+        if (!$settings) {
+            $settings = Settings::create([
+                'language' => DEFAULT_LANGUAGE,
+                'options' => [],
+            ]);
+        }
 
-    public function deleteFilter(string $id)
-    {
-        ProffiFilter::whereKey($id)->delete();
-        return ['ok' => true];
+        $options = is_array($settings->options) ? $settings->options : [];
+        $options['logo'] = $data['logo'] ?? null;
+        $options['dark_logo'] = $data['dark_logo'] ?? null;
+        $settings->update(['options' => $options]);
+
+        return [
+            'logo' => $settings->fresh()->options['logo'] ?? null,
+            'dark_logo' => $settings->fresh()->options['dark_logo'] ?? null,
+        ];
     }
 
     public function tasks()

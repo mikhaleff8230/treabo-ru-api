@@ -19,10 +19,10 @@ class AiJobDraftController extends Controller
         $cacheKey = "ai_job_draft_ip:{$ip}";
         $count = (int) Cache::get($cacheKey, 0);
 
-        if ($count >= 3) {
+        if ($count >= 12) {
             return response()->json([
                 'success' => false,
-                'message' => 'Достигнут лимит: 3 AI-проверки в сутки. Попробуйте завтра.',
+                'message' => 'Достигнут лимит AI-помощника на сегодня. Попробуйте завтра.',
             ], 429);
         }
 
