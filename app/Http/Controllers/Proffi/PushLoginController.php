@@ -24,7 +24,7 @@ class PushLoginController extends Controller
         $profile = Profile::where('contact', $phone)->first();
         $user = $profile ? User::find($profile->customer_id) : null;
         if (!$user || !$user->getPermissionNames()->contains(Permission::STORE_OWNER)) {
-            return response()->json(['detail' => 'Specialist account not found'], 404);
+            return response()->json(['detail' => 'Специалист с таким номером не найден'], 404);
         }
         if (!ProffiPushToken::where('user_id', $user->id)->exists()) {
             return response()->json(['detail' => 'No registered application device'], 409);
