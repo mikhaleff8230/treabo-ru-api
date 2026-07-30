@@ -307,11 +307,22 @@ class AuthController extends Controller
         $phone = $this->normalizePhone($data['phone']);
         $profile = Profile::where('contact', $phone)->first();
         $user = $profile ? User::find($profile->customer_id) : null;
-        if (!$user || !Hash::check($data['password'], $user->password)) {
-            return response()->json(['detail' => 'Invalid phone or password'], 401);
+        if (!$user) {
+            $message = $expectedRole === 'customer'
+                ? 'Клиент с таким номером не найден'
+                : 'Специалист с таким номером не найден';
+
+            return response()->json(['detail' => $message], 404);
         }
         if ($this->proffiRole($user) !== $expectedRole) {
-            return response()->json(['detail' => 'Account role does not match this login page'], 403);
+            $message = $expectedRole === 'customer'
+                ? 'Этот номер зарегистрирован как специалист'
+                : 'Этот номер зарегистрирован как клиент';
+
+            return response()->json(['detail' => $message], 403);
+        }
+        if (!is_string($user->password) || $user->password === '' || !Hash::check($data['password'], $user->password)) {
+            return response()->json(['detail' => 'Неверный пароль'], 401);
         }
 
         if ($this->treaboPhoneOtpEnabled() && !$this->isPhoneVerified($profile)) {
