@@ -27,7 +27,7 @@ class JobDraftAiService
 
         $payload = [
             'model' => $model,
-            'max_output_tokens' => 1800,
+            'max_output_tokens' => 900,
             'instructions' => $this->systemPrompt($data),
             'input' => $this->userPrompt($data),
             'text' => [
@@ -449,6 +449,12 @@ PROMPT;
                 'Choose category_id from categories list. Match by name, slug or context.',
                 'Choose work_id from works list. Match by title, slug or aliases.',
                 'If unsure about category or work, set category_id/work_id to null and lower confidence.',
+                'A request is ready only when the user has described a real service need and both category_id and work_id are confidently identified.',
+                'For greetings, gibberish, unrelated text, jokes, or vague phrases without a service need: set category_id and work_id to null, confidence to 0, needs_clarification to true, and ask what needs to be repaired, installed, cleaned, delivered, or otherwise done.',
+                'When clarification is needed, ask exactly one short, friendly question that is easiest for an ordinary customer to answer.',
+                'Use the clarification dialogue included in text as context. Never repeat a question that the customer has already answered.',
+                'If the service is understood but an important detail is missing, keep the recognized category/work and ask only for that missing detail.',
+                'Set needs_clarification to false only when the draft is useful to a master without guessing the core service.',
                 'Do not generate missing_questions — leave as empty array.',
                 'Set assistant_message to one concise clarification question when information is missing, otherwise briefly confirm the classification.',
                 'Set needs_clarification to true only when another answer would materially improve the request.',
