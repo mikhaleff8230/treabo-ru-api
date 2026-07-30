@@ -8,6 +8,7 @@ use App\Models\ProffiPushToken;
 use App\Services\Proffi\ExpoPushService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Marvel\Database\Models\Profile;
 use Marvel\Database\Models\User;
@@ -29,13 +30,49 @@ class PushLoginController extends Controller
             return response()->json(['detail' => 'No registered application device'], 409);
         }
 
-        $login = ProffiPushLoginRequest::create([
-            'id' => (string) Str::uuid(), 'user_id' => $user->id, 'status' => 'pending', 'expires_at' => now()->addMinutes(5),
+        [$login, $created] = DB::transaction(function () use ($user) {
+            User::whereKey($user->id)->lockForUpdate()->first();
+
+            $pending = ProffiPushLoginRequest::where('user_id', $user->id)
+                ->where('status', 'pending')
+                ->where('expires_at', '>', now())
+                ->latest('created_at')
+                ->first();
+
+            if ($pending) {
+                return [$pending, false];
+            }
+
+            return [
+                ProffiPushLoginRequest::create([
+                    'id' => (string) Str::uuid(),
+                    'user_id' => $user->id,
+                    'status' => 'pending',
+                    'expires_at' => now()->addMinutes(5),
+                ]),
+                true,
+            ];
+        });
+
+        if ($created) {
+            $this->push->sendToUser(
+                (int) $user->id,
+                'Вход в Treabo',
+                'Подтвердите вход мастера на сайте',
+                [
+                    'type' => 'login_confirmation',
+                    'request_id' => $login->id,
+                    'url' => 'treabo://login-confirm/'.$login->id,
+                ]
+            );
+        }
+
+        return response()->json([
+            'request_id' => $login->id,
+            'status' => $login->status,
+            'expires_in' => max(1, now()->diffInSeconds($login->expires_at, false)),
+            'reused' => !$created,
         ]);
-        $this->push->sendToUser((int) $user->id, 'Вход в Treabo', 'Подтвердите вход мастера на сайте', [
-            'type' => 'login_confirmation', 'request_id' => $login->id, 'url' => 'treabo://login-confirm/' . $login->id,
-        ]);
-        return response()->json(['request_id' => $login->id, 'status' => 'pending', 'expires_in' => 300]);
     }
 
     public function status(string $id)

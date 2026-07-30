@@ -59,5 +59,20 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
         });
+
+        RateLimiter::for('specialist-push-login-request', function (Request $request) {
+            $phone = preg_replace('/\D+/', '', (string) $request->input('phone'));
+
+            return [
+                Limit::perMinute(12)->by('specialist-push-phone:'.hash('sha256', $phone)),
+                Limit::perMinute(60)->by('specialist-push-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('specialist-push-login-status', function (Request $request) {
+            return Limit::perMinute(120)->by(
+                'specialist-push-status:'.(string) $request->route('id').':'.$request->ip()
+            );
+        });
     }
 }

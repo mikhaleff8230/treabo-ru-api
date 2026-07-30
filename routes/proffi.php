@@ -112,8 +112,10 @@ Route::prefix('auth')->group(function () {
         Route::post('/login', [AuthController::class, 'specialistLogin'])->middleware('throttle:10,1');
         Route::post('/phone/send-otp', [AuthController::class, 'specialistSendPhoneOtp'])->middleware('throttle:3,10');
         Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
-        Route::post('/push-login/request', [PushLoginController::class, 'request'])->middleware('throttle:5,1');
-        Route::get('/push-login/{id}', [PushLoginController::class, 'status'])->middleware('throttle:60,1');
+        Route::post('/push-login/request', [PushLoginController::class, 'request'])
+            ->middleware('throttle:specialist-push-login-request');
+        Route::get('/push-login/{id}', [PushLoginController::class, 'status'])
+            ->middleware('throttle:specialist-push-login-status');
     });
     Route::post('/verify', [AuthController::class, 'verify']);
     Route::post('/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
