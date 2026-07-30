@@ -27,12 +27,10 @@ class JobDraftAiService
 
         $payload = [
             'model' => $model,
-            'reasoning' => ['effort' => 'low'],
             'max_output_tokens' => 1800,
             'instructions' => $this->systemPrompt($data),
             'input' => $this->userPrompt($data),
             'text' => [
-                'verbosity' => 'low',
                 'format' => [
                     'type' => 'json_schema',
                     'name' => 'treabo_job_draft',

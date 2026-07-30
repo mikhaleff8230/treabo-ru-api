@@ -1,0 +1,25 @@
+ai.80-190-82-113.sslip.io {
+	@health path /health
+	respond @health "ok" 200
+
+    @denied not remote_ip 192.144.57.238/32 127.0.0.1/32 ::1/128
+    respond @denied "forbidden" 403
+
+    reverse_proxy relay:8080 {
+        header_up -X-Forwarded-For
+        header_up -X-Forwarded-Host
+        header_up -X-Forwarded-Proto
+    }
+}
+
+treabo.md, www.treabo.md {
+	reverse_proxy shop:3000
+}
+
+seller.treabo.md {
+	reverse_proxy admin:3002
+}
+
+api.treabo.md {
+	reverse_proxy api:8000
+}
