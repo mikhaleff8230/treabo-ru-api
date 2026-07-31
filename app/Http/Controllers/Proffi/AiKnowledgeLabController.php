@@ -291,7 +291,15 @@ class AiKnowledgeLabController extends Controller
         try {
             return $publisher->publish($version->fresh(), $request->user()?->id);
         } catch (\DomainException $e) {
+            $version->update(['status' => 'draft']);
             return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            $version->update(['status' => 'draft']);
+            report($e);
+
+            return response()->json([
+                'message' => 'Публикация не выполнена. Версия возвращена в черновик.',
+            ], 500);
         }
     }
 

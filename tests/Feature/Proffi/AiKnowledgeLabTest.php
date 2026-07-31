@@ -146,6 +146,151 @@ class AiKnowledgeLabTest extends TestCase
             ->assertJsonPath('knowledge_version_id', $import->knowledge_version_id);
     }
 
+    public function test_publication_accepts_aliases_array(): void
+    {
+        ProffiCategory::create([
+            'id' => 'bathroom',
+            'slug' => 'bathroom',
+            'icon' => 'Wrench',
+            'name_ru' => 'Bathroom',
+            'name_ro' => 'Bathroom',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $work = ProffiWork::create([
+            'category_id' => 'bathroom',
+            'title' => 'Plumbing repair',
+            'slug' => 'plumbing-repair',
+            'aliases' => ['Existing alias'],
+            'is_active' => true,
+        ]);
+        $import = $this->createImport();
+        AiKnowledgeProposal::create([
+            'import_id' => $import->id,
+            'knowledge_version_id' => $import->knowledge_version_id,
+            'proposal_type' => 'add_alias',
+            'status' => 'accepted',
+            'target_type' => 'service',
+            'target_id' => (string) $work->id,
+            'title' => 'Aliases array',
+            'payload' => ['aliases' => ['Bathroom repair', 'Mixer repair', 'bathroom repair']],
+            'evidence' => [['text' => 'Bathroom repair']],
+            'confidence' => 0.9,
+            'risk_level' => 'low',
+        ]);
+
+        $this->postJson(
+            "/api/proffi/admin/ai-lab/versions/{$import->knowledge_version_id}/publish",
+            [],
+            $this->headers
+        )->assertOk()->assertJsonPath('status', 'published');
+
+        $this->assertSame(
+            ['Existing alias', 'bathroom repair', 'Mixer repair'],
+            $work->fresh()->aliases
+        );
+    }
+
+    public function test_publication_merges_duplicate_service_proposals(): void
+    {
+        ProffiCategory::create([
+            'id' => 'bathroom',
+            'slug' => 'bathroom',
+            'icon' => 'Wrench',
+            'name_ru' => 'Bathroom',
+            'name_ro' => 'Bathroom',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $import = $this->createImport();
+        foreach ([
+            ['aliases' => ['Full bathroom repair'], 'description' => 'First description'],
+            ['aliases' => ['Turnkey bathroom repair'], 'description' => 'Second description'],
+        ] as $index => $payload) {
+            AiKnowledgeProposal::create([
+                'import_id' => $import->id,
+                'knowledge_version_id' => $import->knowledge_version_id,
+                'proposal_type' => 'create_service',
+                'status' => 'accepted',
+                'target_type' => 'category',
+                'target_id' => 'bathroom',
+                'title' => 'Bathroom renovation',
+                'payload' => [
+                    'title' => 'Bathroom renovation',
+                    'category_id' => 'bathroom',
+                    ...$payload,
+                ],
+                'evidence' => [['text' => 'Bathroom renovation '.($index + 1)]],
+                'confidence' => 0.9,
+                'risk_level' => 'low',
+            ]);
+        }
+
+        $this->postJson(
+            "/api/proffi/admin/ai-lab/versions/{$import->knowledge_version_id}/publish",
+            [],
+            $this->headers
+        )->assertOk()->assertJsonPath('status', 'published');
+
+        $works = ProffiWork::where('category_id', 'bathroom')
+            ->where('title', 'Bathroom renovation')
+            ->get();
+        $this->assertCount(1, $works);
+        $this->assertEqualsCanonicalizing(
+            ['Full bathroom repair', 'Turnkey bathroom repair'],
+            $works->first()->aliases
+        );
+        $this->assertSame('First description', $works->first()->description);
+    }
+
+    public function test_invalid_publication_returns_version_to_draft(): void
+    {
+        ProffiCategory::create([
+            'id' => 'bathroom',
+            'slug' => 'bathroom',
+            'icon' => 'Wrench',
+            'name_ru' => 'Bathroom',
+            'name_ro' => 'Bathroom',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $work = ProffiWork::create([
+            'category_id' => 'bathroom',
+            'title' => 'Plumbing repair',
+            'slug' => 'plumbing-repair',
+            'aliases' => [],
+            'is_active' => true,
+        ]);
+        $import = $this->createImport();
+        AiKnowledgeProposal::create([
+            'import_id' => $import->id,
+            'knowledge_version_id' => $import->knowledge_version_id,
+            'proposal_type' => 'add_alias',
+            'status' => 'accepted',
+            'target_type' => 'service',
+            'target_id' => (string) $work->id,
+            'title' => 'Broken alias proposal',
+            'payload' => ['aliases' => []],
+            'evidence' => [],
+            'confidence' => 0.9,
+            'risk_level' => 'low',
+        ]);
+
+        $this->postJson(
+            "/api/proffi/admin/ai-lab/versions/{$import->knowledge_version_id}/publish",
+            [],
+            $this->headers
+        )->assertUnprocessable()
+            ->assertJsonPath('evaluation.status', 'failed')
+            ->assertJsonPath('evaluation.failures.0.code', 'invalid_proposal_payload');
+
+        $this->assertDatabaseHas('ai_knowledge_versions', [
+            'id' => $import->knowledge_version_id,
+            'status' => 'draft',
+        ]);
+        $this->assertSame([], $work->fresh()->aliases);
+    }
+
     private function createImport(): AiKnowledgeImport
     {
         $response = $this->postJson('/api/proffi/admin/ai-lab/imports', [

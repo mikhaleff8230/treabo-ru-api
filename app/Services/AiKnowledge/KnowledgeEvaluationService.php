@@ -10,6 +10,10 @@ use App\Models\ProffiWork;
 
 class KnowledgeEvaluationService
 {
+    public function __construct(private readonly KnowledgeVersionPublisher $publisher)
+    {
+    }
+
     public function evaluate(AiKnowledgeVersion $version): AiEvaluationRun
     {
         $started = microtime(true);
@@ -40,6 +44,10 @@ class KnowledgeEvaluationService
             ->pluck('id');
         foreach ($critical as $proposalId) {
             $failures[] = ['code' => 'critical_proposal', 'proposal_id' => $proposalId];
+        }
+
+        foreach ($this->publisher->validateVersion($version) as $failure) {
+            $failures[] = $failure;
         }
 
         $metrics = [
