@@ -8,6 +8,7 @@ use App\Models\ProffiWorkQuestion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProffiWorkQuestionController extends Controller
 {
@@ -73,15 +74,29 @@ class ProffiWorkQuestionController extends Controller
             'options.*' => ['string', 'max:255'],
             'placeholder' => ['nullable', 'string', 'max:255'],
             'help_text' => ['nullable', 'string', 'max:2000'],
+            'ai_instruction' => ['nullable', 'string', 'max:4000'],
+            'group_id' => ['nullable', 'integer', 'exists:proffi_question_groups,id'],
             'is_required' => ['nullable', 'boolean'],
+            'default_visibility' => ['nullable', Rule::in(['always', 'conditional'])],
+            'is_safety_critical' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
         $data['sort_order'] = $data['sort_order'] ?? 0;
         $data['is_required'] = $data['is_required'] ?? false;
+        $data['default_visibility'] = $data['default_visibility'] ?? 'always';
+        $data['is_safety_critical'] = $data['is_safety_critical'] ?? false;
         $data['is_active'] = $data['is_active'] ?? true;
         $data['options'] = $data['options'] ?? null;
+        if (!empty($data['group_id'])
+            && !\App\Models\ProffiQuestionGroup::whereKey($data['group_id'])
+                ->where('work_id', $data['work_id'])->exists()
+        ) {
+            throw ValidationException::withMessages([
+                'group_id' => 'Группа должна относиться к выбранной работе.',
+            ]);
+        }
         if (empty($data['field_key'])) {
             $base = Str::slug($data['question'], '_') ?: 'question';
             $fieldKey = mb_substr($base, 0, 112);

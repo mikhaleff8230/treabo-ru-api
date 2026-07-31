@@ -6,6 +6,7 @@ use App\Models\ProffiCategory;
 use App\Models\ProffiWork;
 use App\Models\ProffiWorkQuestion;
 use App\Models\AiChatKnowledge;
+use App\Services\AiKnowledge\KnowledgeRetrievalService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -15,6 +16,10 @@ class JobDraftAiService
     private const URGENCIES = ['urgent', 'this_week', 'this_month', 'flexible', 'unknown'];
 
     private ?int $tokensUsed = null;
+
+    public function __construct(private readonly KnowledgeRetrievalService $retrieval)
+    {
+    }
 
     public function generateDraft(array $data): array
     {
@@ -415,7 +420,7 @@ PROMPT;
 
     private function userPrompt(array $data): string
     {
-        $catalog = $this->catalogContext();
+        $catalog = $this->catalogContext((string) ($data['text'] ?? ''));
 
         $schema = [
             'detected_language' => 'ru|unknown',
@@ -511,8 +516,23 @@ PROMPT;
     /**
      * @return array{categories: array<int, array<string, mixed>>, works: array<int, array<string, mixed>>}
      */
-    private function catalogContext(): array
+    private function catalogContext(string $text): array
     {
+        $retrieved = $this->retrieval->retrieve($text, 12);
+        if ($retrieved['knowledge_version_id'] && $retrieved['works']) {
+            $questionsByWork = collect($retrieved['questions'])->groupBy('work_id');
+
+            return [
+                'categories' => $retrieved['categories'],
+                'works' => collect($retrieved['works'])->map(function (array $work) use ($questionsByWork) {
+                    $work['id'] = $work['work_id'];
+                    $work['questions'] = $questionsByWork->get($work['work_id'], collect())->values()->all();
+
+                    return $work;
+                })->values()->all(),
+            ];
+        }
+
         $categories = ProffiCategory::query()
             ->where('is_active', true)
             ->orderBy('sort_order')

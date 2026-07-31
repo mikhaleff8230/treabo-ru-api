@@ -45,7 +45,7 @@ services:
     restart: unless-stopped
     command: >
       sh -lc "(test -f vendor/autoload.php || COMPOSER_CACHE_DIR=/tmp/composer-cache composer install --no-interaction --prefer-dist --no-dev --optimize-autoloader)
-      && php artisan queue:work --sleep=3 --tries=3 --timeout=120"
+      && php artisan queue:work --queue=knowledge-llm,default --sleep=3 --tries=2 --timeout=660"
 
   websockets:
     build:

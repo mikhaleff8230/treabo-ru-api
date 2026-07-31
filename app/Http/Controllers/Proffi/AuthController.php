@@ -215,7 +215,7 @@ class AuthController extends Controller
 
         $data = $request->validate([
             'phone' => ['required', 'string'],
-            'channel' => ['nullable', 'in:sms,telegram'],
+            'channel' => ['nullable', 'in:telegram,email'],
         ]);
         $phone = $this->normalizePhone($data['phone']);
         $user = $this->findUserByPhone($phone);
@@ -225,6 +225,40 @@ class AuthController extends Controller
         }
 
         $channel = $data['channel'] ?? 'telegram';
+        if ($channel === 'email') {
+            $email = Str::lower(trim((string) $user->email));
+            if ($email === '' || str_ends_with($email, '@proffi.local')) {
+                return response()->json(['detail' => 'Recovery email is not configured'], 422);
+            }
+            $otpId = 'otp_email_'.Str::lower(Str::random(32));
+            $code = (string) random_int(100000, 999999);
+            $this->cacheTreaboOtpContext($otpId, [
+                'purpose' => 'reset_password',
+                'phone' => $phone,
+                'user_id' => $user->id,
+                'attempts' => 0,
+                'channel' => 'email',
+                'code_hash' => Hash::make($code),
+            ]);
+            try {
+                \Illuminate\Support\Facades\Mail::raw(
+                    "Код восстановления пароля Treabo: {$code}",
+                    fn ($message) => $message->to($email)->subject('Восстановление пароля Treabo')
+                );
+            } catch (\Throwable $e) {
+                $this->forgetTreaboOtpContext($otpId);
+                return response()->json(['detail' => 'Recovery email could not be sent'], 502);
+            }
+
+            return response()->json([
+                'status' => 'otp_sent',
+                'phone' => $phone,
+                'otp_id' => $otpId,
+                'channel' => 'email',
+                'destination' => preg_replace('/(^.).*(@.*$)/u', '$1***$2', $email),
+            ]);
+        }
+
         $sent = $this->dispatchTreaboPhoneOtp($phone, $channel);
         if (!$sent['ok']) {
             return response()->json(['detail' => 'Verification code could not be sent'], 502);
@@ -265,7 +299,10 @@ class AuthController extends Controller
             return response()->json(['detail' => 'Too many attempts'], 429);
         }
 
-        if (!$this->verifyTreaboPhoneOtpCode($data['otp_id'], $data['code'], $phone)) {
+        $codeIsValid = ($context['channel'] ?? null) === 'email'
+            ? Hash::check(trim($data['code']), (string) ($context['code_hash'] ?? ''))
+            : $this->verifyTreaboPhoneOtpCode($data['otp_id'], $data['code'], $phone);
+        if (!$codeIsValid) {
             $context['attempts'] = $attempts + 1;
             $this->cacheTreaboOtpContext($data['otp_id'], $context);
             return response()->json(['detail' => 'Invalid code'], 400);

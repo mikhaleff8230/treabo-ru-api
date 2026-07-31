@@ -8,7 +8,9 @@ services:
       - .env.proffi-docker
     environment:
       COMPOSER_PROCESS_TIMEOUT: "1800"
+      PHP_CLI_SERVER_WORKERS: "8"
       PUSHER_HOST: websockets
+      QUEUE_CONNECTION: redis
     ports:
       - "8001:8000"
     extra_hosts:
@@ -29,6 +31,28 @@ services:
       && php artisan migrate --force
       && php artisan optimize:clear
       && php artisan serve --host=0.0.0.0 --port=8000"
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile.proffi
+    working_dir: /var/www/html
+    env_file:
+      - .env.proffi-docker
+    environment:
+      COMPOSER_PROCESS_TIMEOUT: "1800"
+      QUEUE_CONNECTION: redis
+    volumes:
+      - .:/var/www/html
+      - composer_cache:/tmp/composer-cache
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: >
+      sh -lc "(test -f vendor/autoload.php || composer install --no-interaction --prefer-dist --no-dev)
+      && php artisan queue:work --queue=knowledge-llm,default --sleep=2 --tries=2 --timeout=660"
 
   mysql:
     image: mysql:8.0
