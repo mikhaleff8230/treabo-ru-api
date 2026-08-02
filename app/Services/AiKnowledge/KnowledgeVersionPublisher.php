@@ -36,7 +36,13 @@ class KnowledgeVersionPublisher
             }
 
             $report = ['changes' => [], 'proposal_count' => $accepted->count()];
-            foreach ($accepted as $proposal) {
+            $publicationOrder = $accepted->sortBy(fn ($proposal) => match ($proposal->proposal_type) {
+                'create_category' => 10,
+                'create_service' => 20,
+                'create_question', 'create_option', 'create_rule' => 30,
+                default => 40,
+            });
+            foreach ($publicationOrder as $proposal) {
                 $this->proposalApplier->applyToDraft($proposal);
                 $change = $this->applyCatalogChange($proposal);
                 if ($change) {
@@ -144,11 +150,10 @@ class KnowledgeVersionPublisher
             if ($name === '') {
                 throw new \DomainException("В предложении #{$proposal->id} отсутствует name_ru.");
             }
-            $base = Str::slug($name) ?: 'category';
-            $id = $base;
-            $suffix = 2;
-            while (ProffiCategory::whereKey($id)->exists()) {
-                $id = $base.'-'.$suffix++;
+            $id = $this->categoryIdFromPayload($payload);
+            $existing = ProffiCategory::whereKey($id)->first();
+            if ($existing) {
+                return ['type' => 'existing_category', 'id' => $existing->id];
             }
             ProffiCategory::create([
                 'id' => $id,
@@ -165,7 +170,7 @@ class KnowledgeVersionPublisher
         }
 
         if ($proposal->proposal_type === 'create_service') {
-            $title = trim((string) ($payload['title'] ?? $payload['name'] ?? ''));
+            $title = trim((string) ($payload['title'] ?? $payload['name'] ?? $proposal->title));
             $categoryId = (string) ($payload['category_id'] ?? $proposal->target_id ?? '');
             if ($title === '' || !ProffiCategory::whereKey($categoryId)->exists()) {
                 throw new \DomainException("Предложение #{$proposal->id} не содержит корректную работу и категорию.");
@@ -249,6 +254,12 @@ class KnowledgeVersionPublisher
     private function validateProposals(iterable $proposals): array
     {
         $failures = [];
+        $proposals = collect($proposals);
+        $pendingCategoryIds = $proposals
+            ->where('proposal_type', 'create_category')
+            ->map(fn ($proposal) => $this->categoryIdFromPayload((array) ($proposal->payload ?? [])))
+            ->filter()
+            ->unique();
         foreach ($proposals as $proposal) {
             $payload = is_array($proposal->payload) ? $proposal->payload : [];
             $message = null;
@@ -264,9 +275,11 @@ class KnowledgeVersionPublisher
                     $message = "В предложении #{$proposal->id} отсутствует name_ru.";
                 }
             } elseif ($proposal->proposal_type === 'create_service') {
-                $title = trim((string) ($payload['title'] ?? $payload['name'] ?? ''));
+                $title = trim((string) ($payload['title'] ?? $payload['name'] ?? $proposal->title));
                 $categoryId = (string) ($payload['category_id'] ?? $proposal->target_id ?? '');
-                if ($title === '' || !ProffiCategory::whereKey($categoryId)->exists()) {
+                $categoryExists = ProffiCategory::whereKey($categoryId)->exists()
+                    || $pendingCategoryIds->contains($categoryId);
+                if ($title === '' || !$categoryExists) {
                     $message = "Предложение #{$proposal->id} не содержит корректную работу и категорию.";
                 }
             } elseif ($proposal->proposal_type === 'create_question') {
@@ -286,6 +299,18 @@ class KnowledgeVersionPublisher
         }
 
         return $failures;
+    }
+
+    private function categoryIdFromPayload(array $payload): string
+    {
+        $requestedId = trim((string) ($payload['category_id'] ?? $payload['slug'] ?? ''));
+        if ($requestedId !== '') {
+            return Str::slug($requestedId) ?: $requestedId;
+        }
+
+        $name = trim((string) ($payload['name_ru'] ?? $payload['title'] ?? ''));
+
+        return Str::slug($name) ?: 'category';
     }
 
     private function aliasesFromPayload(array $payload): array

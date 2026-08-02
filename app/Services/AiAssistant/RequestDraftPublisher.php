@@ -103,8 +103,9 @@ class RequestDraftPublisher
                 'ai_details' => [
                     'request_draft_id' => $draft->id,
                     'catalog_version_id' => $draft->catalog_version_id,
-                    'answers' => $draft->answers()->get()->map(fn ($answer) => [
+                    'answers' => $draft->answers()->with('question')->get()->map(fn ($answer) => [
                         'question_id' => $answer->question_id,
+                        'question' => $answer->question?->question,
                         'value' => $answer->value['value'] ?? null,
                         'display_value' => $answer->display_value,
                         'source' => $answer->source,

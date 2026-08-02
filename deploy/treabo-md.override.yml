@@ -1,0 +1,29 @@
+services:
+  api:
+    networks:
+      - default
+  queue:
+    networks:
+      - default
+  websockets:
+    networks:
+      - default
+  mysql:
+    networks:
+      - default
+  redis:
+    networks:
+      - default
+  shop:
+    networks:
+      - default
+  admin:
+    networks:
+      - default
+  nginx:
+    profiles:
+      - internal-nginx
+
+networks:
+  default:
+    name: treabo_md_app

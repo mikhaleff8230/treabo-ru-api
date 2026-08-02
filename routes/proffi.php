@@ -243,6 +243,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/chats', [ChatController::class, 'index']);
     Route::get('/chats/{chat}', [ChatController::class, 'show']);
+    Route::get('/chats/{chat}/customer-contact', [ChatController::class, 'customerContact'])->middleware('throttle:10,1');
+    Route::get('/chats/{chat}/specialist-contact', [ChatController::class, 'specialistContact'])->middleware('throttle:10,1');
     Route::get('/chats/{chat}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{chat}/messages', [ChatController::class, 'send']);
     Route::post('/chats/{chat}/read', [ChatController::class, 'read']);

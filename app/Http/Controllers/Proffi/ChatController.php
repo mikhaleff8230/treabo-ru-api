@@ -29,7 +29,7 @@ class ChatController extends Controller
     {
         $userId = (int) $request->user()->id;
 
-        return ProffiChat::with(['task', 'customer', 'specialist'])
+        return ProffiChat::with(['task', 'customer.profile', 'specialist.profile'])
             ->where(fn ($query) => $query->where('customer_id', $userId)->orWhere('specialist_id', $userId))
             ->latest('updated_at')
             ->get()
@@ -43,7 +43,49 @@ class ChatController extends Controller
             return response()->json(['detail' => 'Forbidden'], 403);
         }
 
-        return $this->mapChat($chat->load(['task', 'customer', 'specialist']), (int) $request->user()->id);
+        return $this->mapChat($chat->load(['task', 'customer.profile', 'specialist.profile']), (int) $request->user()->id);
+    }
+
+    public function customerContact(Request $request, ProffiChat $chat)
+    {
+        if ((int) $chat->specialist_id !== (int) $request->user()->id) {
+            return response()->json(['detail' => 'Forbidden'], 403);
+        }
+
+        $chat->loadMissing(['customer.profile']);
+        $phone = trim((string) ($chat->customer?->phone ?: $chat->customer?->profile?->contact));
+        if ($phone === '') {
+            return response()->json(['detail' => 'Клиент не указал телефон'], 404);
+        }
+
+        Log::info('Customer phone revealed to specialist', [
+            'chat_id' => $chat->id,
+            'customer_id' => $chat->customer_id,
+            'specialist_id' => $request->user()->id,
+        ]);
+
+        return response()->json(['phone' => $phone]);
+    }
+
+    public function specialistContact(Request $request, ProffiChat $chat)
+    {
+        if ((int) $chat->customer_id !== (int) $request->user()->id) {
+            return response()->json(['detail' => 'Forbidden'], 403);
+        }
+
+        $chat->loadMissing(['specialist.profile']);
+        $phone = trim((string) ($chat->specialist?->phone ?: $chat->specialist?->profile?->contact));
+        if ($phone === '') {
+            return response()->json(['detail' => 'Мастер не указал телефон'], 404);
+        }
+
+        Log::info('Specialist phone revealed to customer', [
+            'chat_id' => $chat->id,
+            'customer_id' => $request->user()->id,
+            'specialist_id' => $chat->specialist_id,
+        ]);
+
+        return response()->json(['phone' => $phone]);
     }
 
     public function messages(Request $request, ProffiChat $chat)
@@ -111,7 +153,7 @@ class ChatController extends Controller
             'type' => 'chat_message',
             'chat_id' => (string) $chat->id,
             'message_id' => (string) $message->id,
-            'url' => 'treabo://chat/' . $chat->id,
+            'url' => 'treabo-specialist://chat/' . $chat->id,
         ]);
 
         return response()->json($this->mapMessage($message), 201);
@@ -276,8 +318,14 @@ class ChatController extends Controller
             'task_title' => $chat->task?->title,
             'customer_id' => (string) $chat->customer_id,
             'customer_name' => $chat->customer?->name,
+            'customer_avatar' => $chat->customer?->avatar ?: $chat->customer?->profile?->avatar,
+            'customer_phone_masked' => $this->maskPhone($chat->customer?->phone ?: $chat->customer?->profile?->contact),
+            'customer_city' => $chat->customer?->profile?->proffi_city,
             'specialist_id' => (string) $chat->specialist_id,
             'specialist_name' => $chat->specialist?->name,
+            'specialist_avatar' => $chat->specialist?->avatar ?: $chat->specialist?->profile?->avatar,
+            'specialist_phone_masked' => $this->maskPhone($chat->specialist?->phone ?: $chat->specialist?->profile?->contact),
+            'specialist_city' => $chat->specialist?->profile?->proffi_city,
             'last_message' => $chat->last_message,
             'last_message_at' => optional($chat->last_message_at)->toIso8601String(),
             'unread_count' => $this->unreadCount($chat, $currentUserId),
@@ -288,6 +336,15 @@ class ChatController extends Controller
             'created_at' => optional($chat->created_at)->toIso8601String(),
             'updated_at' => optional($chat->updated_at)->toIso8601String(),
         ];
+    }
+
+    private function maskPhone(?string $phone): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone);
+        if ($digits === '') return null;
+        if (strlen($digits) === 10) $digits = '7' . $digits;
+        $visible = substr($digits, 0, min(4, strlen($digits)));
+        return '+' . $visible . str_repeat('•', max(0, strlen($digits) - strlen($visible)));
     }
 
     private function unreadCount(ProffiChat $chat, int $currentUserId): int

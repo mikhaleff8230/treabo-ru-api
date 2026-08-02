@@ -2,7 +2,7 @@
 
 return [
     'model' => env('AI_KNOWLEDGE_MODEL', env('OPENAI_MODEL', 'gpt-4.1-mini')),
-    'prompt_version' => env('AI_KNOWLEDGE_PROMPT_VERSION', 'knowledge-cluster-v1'),
+    'prompt_version' => env('AI_KNOWLEDGE_PROMPT_VERSION', 'knowledge-cluster-v2'),
     'max_rows_per_import' => (int) env('AI_KNOWLEDGE_MAX_ROWS', 10000),
     'cluster_size' => (int) env('AI_KNOWLEDGE_CLUSTER_SIZE', 40),
     'max_output_tokens' => (int) env('AI_KNOWLEDGE_MAX_OUTPUT_TOKENS', 1800),

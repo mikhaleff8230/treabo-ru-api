@@ -278,6 +278,7 @@ class SellerBalanceController extends Controller
             $request->validate([
                 'amount' => 'nullable|numeric|min:1',
                 'payment_method' => 'required|in:balance,yookassa,manual',
+                'source' => 'nullable|in:web,mobile',
             ]);
 
             $amount = (float) $request->amount;
@@ -346,7 +347,10 @@ class SellerBalanceController extends Controller
                 $service = new YooKassaService($config);
 
                 $shopUrl = rtrim((string) env('SHOP_URL', config('app.url')), '/');
-                $returnUrl = $shopUrl . '/treabo/balance?deposit=success';
+                $returnUrl = $request->input('source') === 'mobile'
+                    ? $shopUrl . '/' . ltrim((string) config('services.treabo_balance.mobile_return_path'), '/')
+                    : $shopUrl . '/treabo/balance?deposit=success';
+                $failureReturnUrl = $returnUrl . (str_contains($returnUrl, '?') ? '&' : '?') . 'deposit=failed';
                 $description = "Пополнение баланса на сумму {$amount} ₽";
 
                 // Формируем receipt для ЮKassa (54-ФЗ) - обязателен для боевого режима
@@ -390,7 +394,7 @@ class SellerBalanceController extends Controller
                         $amount,
                         $description,
                         $returnUrl,
-                        $returnUrl . '?deposit=failed',
+                        $failureReturnUrl,
                         $receipt
                     );
 

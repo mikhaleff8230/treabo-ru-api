@@ -102,11 +102,17 @@ class AiKnowledgeLabController extends Controller
 
     public function proposals(Request $request)
     {
+        $excludedStatuses = collect(explode(',', (string) $request->query('exclude_statuses')))
+            ->filter(fn ($status) => in_array($status, ['rejected', 'superseded', 'published'], true))
+            ->values()
+            ->all();
+
         return AiKnowledgeProposal::query()
             ->with('import.source')
             ->when($request->filled('import_id'), fn ($query) => $query->where('import_id', $request->integer('import_id')))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
             ->when($request->filled('proposal_type'), fn ($query) => $query->where('proposal_type', $request->string('proposal_type')))
+            ->when($excludedStatuses, fn ($query) => $query->whereNotIn('status', $excludedStatuses))
             ->latest('id')
             ->paginate(min(100, max(1, (int) $request->query('limit', 50))));
     }

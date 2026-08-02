@@ -291,6 +291,49 @@ class AiKnowledgeLabTest extends TestCase
         $this->assertSame([], $work->fresh()->aliases);
     }
 
+    public function test_new_category_and_its_services_are_published_as_one_package(): void
+    {
+        $import = $this->createImport();
+        AiKnowledgeProposal::create([
+            'import_id' => $import->id,
+            'knowledge_version_id' => $import->knowledge_version_id,
+            'proposal_type' => 'create_category',
+            'status' => 'accepted',
+            'title' => 'Сборка мебели',
+            'payload' => ['name_ru' => 'Сборка мебели', 'category_id' => 'sborka-mebeli'],
+            'evidence' => [['text' => 'Сборка мебели']],
+            'confidence' => 0.95,
+            'risk_level' => 'low',
+        ]);
+        foreach (['Сборка шкафа', 'Сборка кровати', 'Разборка мебели'] as $title) {
+            AiKnowledgeProposal::create([
+                'import_id' => $import->id,
+                'knowledge_version_id' => $import->knowledge_version_id,
+                'proposal_type' => 'create_service',
+                'status' => 'accepted',
+                'title' => $title,
+                'payload' => ['category_id' => 'sborka-mebeli', 'aliases' => []],
+                'evidence' => [['text' => $title]],
+                'confidence' => 0.95,
+                'risk_level' => 'low',
+            ]);
+        }
+
+        $this->postJson(
+            "/api/proffi/admin/ai-lab/versions/{$import->knowledge_version_id}/publish",
+            [],
+            $this->headers
+        )->assertOk()->assertJsonPath('status', 'published');
+
+        $this->assertDatabaseHas('proffi_categories', ['id' => 'sborka-mebeli']);
+        foreach (['Сборка шкафа', 'Сборка кровати', 'Разборка мебели'] as $title) {
+            $this->assertDatabaseHas('proffi_works', [
+                'category_id' => 'sborka-mebeli',
+                'title' => $title,
+            ]);
+        }
+    }
+
     private function createImport(): AiKnowledgeImport
     {
         $response = $this->postJson('/api/proffi/admin/ai-lab/imports', [
