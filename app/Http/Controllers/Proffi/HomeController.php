@@ -104,11 +104,13 @@ class HomeController extends Controller
         ];
     }
 
-    public function mobileVersion()
+    public function mobileVersion(string $appType = 'specialist')
     {
-        $settings = TreaboMobileUpdateSetting::current();
+        abort_unless(in_array($appType, ['specialist', 'client'], true), 404);
+        $settings = TreaboMobileUpdateSetting::current($appType);
 
         return [
+            'app_type' => $settings->app_type,
             'latest_version' => $settings->latest_version,
             'latest_build' => (int) $settings->latest_build,
             'min_supported_build' => (int) $settings->min_supported_build,

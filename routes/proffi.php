@@ -192,6 +192,8 @@ Route::get('/home/stats', [HomeController::class, 'stats']);
 Route::get('/home/top-specialists', [HomeController::class, 'topSpecialists']);
 Route::get('/site-settings', [HomeController::class, 'siteSettings']);
 Route::get('/mobile-version', [HomeController::class, 'mobileVersion']);
+Route::get('/mobile-version/{appType}', [HomeController::class, 'mobileVersion'])
+    ->whereIn('appType', ['specialist', 'client']);
 Route::get('/stories', [CategoryController::class, 'stories']);
 Route::get('/files/{path}', [UploadController::class, 'show'])->where('path', '.*');
 Route::get('/tasks', [TaskController::class, 'index']);

@@ -401,14 +401,19 @@ class AdminController extends Controller
         return $settings->fresh();
     }
 
-    public function mobileUpdateSettings()
+    public function mobileUpdateSettings(Request $request)
     {
-        return TreaboMobileUpdateSetting::current();
+        $appType = $request->validate([
+            'app_type' => ['nullable', 'in:specialist,client'],
+        ])['app_type'] ?? 'specialist';
+
+        return TreaboMobileUpdateSetting::current($appType);
     }
 
     public function updateMobileUpdateSettings(Request $request)
     {
         $data = $request->validate([
+            'app_type' => ['nullable', 'in:specialist,client'],
             'latest_version' => ['required', 'string', 'max:50'],
             'latest_build' => ['required', 'integer', 'min:1', 'max:1000000'],
             'min_supported_build' => ['required', 'integer', 'min:1', 'max:1000000'],
@@ -419,7 +424,7 @@ class AdminController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $settings = TreaboMobileUpdateSetting::current();
+        $settings = TreaboMobileUpdateSetting::current($data['app_type'] ?? 'specialist');
         $settings->update([
             'latest_version' => $data['latest_version'],
             'latest_build' => $data['latest_build'],

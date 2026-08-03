@@ -15,16 +15,20 @@ class TreaboMobileUpdateSetting extends Model
         'is_active' => 'boolean',
     ];
 
-    public static function current(): self
+    public static function current(string $appType = 'specialist'): self
     {
+        $appType = $appType === 'client' ? 'client' : 'specialist';
+
         return self::query()->firstOrCreate(
-            ['id' => 1],
+            ['app_type' => $appType],
             [
                 'latest_version' => '1.0.0',
-                'latest_build' => 3,
+                'latest_build' => $appType === 'specialist' ? 11 : 1,
                 'min_supported_build' => 1,
                 'force_update' => false,
-                'android_url' => 'https://treabo.ru/downloads/treabo-proffi.apk',
+                'android_url' => $appType === 'specialist'
+                    ? 'https://treabo.ru/downloads/treabo-proffi.apk'
+                    : 'https://treabo.ru/downloads/treabo-client.apk',
                 'ios_url' => null,
                 'release_notes' => null,
                 'is_active' => true,
