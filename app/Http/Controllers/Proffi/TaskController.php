@@ -357,6 +357,7 @@ class TaskController extends Controller
             'customer' => [
                 'id' => (string) $task->customer_id,
                 'name' => $task->customer?->name ?? '',
+                'avatar' => $task->customer?->avatar ?: $task->customer?->profile?->avatar,
                 'last_seen' => optional($task->customer?->updated_at)->toIso8601String(),
             ],
         ];
@@ -402,6 +403,7 @@ class TaskController extends Controller
             'is_favorite' => $isFavorite,
             'customer_id' => (string) $task->customer_id,
             'customer_name' => $task->customer?->name,
+            'customer_avatar' => $task->customer?->avatar ?: $task->customer?->profile?->avatar,
             'accepted_specialist_id' => $task->accepted_specialist_id ? (string) $task->accepted_specialist_id : null,
             'photos' => $task->photos ?: [],
             'details' => $task->ai_details ?: null,
