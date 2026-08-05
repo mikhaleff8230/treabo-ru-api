@@ -43,14 +43,15 @@ trait UsesTreaboPhoneOtp
         Cache::forget($this->treaboOtpContextKey($otpId));
     }
 
-    protected function dispatchTreaboPhoneOtp(string $phone, string $channel = 'sms'): array
+    protected function dispatchTreaboPhoneOtp(string $phone, string $channel = 'wcall'): array
     {
         try {
-            $channel = $channel === 'telegram' ? 'telegram' : 'sms';
+            $channel = in_array($channel, ['wcall', 'telegram', 'sms'], true) ? $channel : 'wcall';
             $dedupeKey = 'treabo_otp_dispatch:' . sha1($phone . '|' . $channel);
             $existingOtpId = Cache::get($dedupeKey);
             if (is_string($existingOtpId) && $existingOtpId !== '') {
-                return ['ok' => true, 'otp_id' => $existingOtpId, 'channel' => $channel, 'reused' => true];
+                $verification = $this->getTreaboOtpGateway()->getVerificationData($existingOtpId);
+                return ['ok' => true, 'otp_id' => $existingOtpId, 'channel' => $channel, 'call_to' => $verification['call_to'] ?? null, 'reused' => true];
             }
 
             $otpGateway = $this->getTreaboOtpGateway();
@@ -77,7 +78,8 @@ trait UsesTreaboPhoneOtp
 
             Cache::put($dedupeKey, $otpId, now()->addMinutes(5));
 
-            return ['ok' => true, 'otp_id' => $otpId, 'channel' => $channel, 'reused' => false];
+            $verification = $otpGateway->getVerificationData($otpId);
+            return ['ok' => true, 'otp_id' => $otpId, 'channel' => $channel, 'call_to' => $verification['call_to'] ?? null, 'reused' => false];
         } catch (\Throwable $e) {
             Log::error('Treabo OTP gateway error', [
                 'phone' => $phone,
@@ -106,13 +108,18 @@ trait UsesTreaboPhoneOtp
         }
     }
 
-    protected function treaboOtpSentPayload(string $phone, string $otpId, string $channel = 'sms'): array
+    protected function treaboOtpSentPayload(string $phone, string $otpId, string $channel = 'wcall', ?string $callTo = null): array
     {
+        if ($channel === 'wcall' && !$callTo) {
+            $verification = $this->getTreaboOtpGateway()->getVerificationData($otpId);
+            $callTo = $verification['call_to'] ?? null;
+        }
         return [
             'status' => 'otp_sent',
             'phone' => $phone,
             'otp_id' => $otpId,
             'channel' => $channel,
+            'call_to' => $callTo,
         ];
     }
 }

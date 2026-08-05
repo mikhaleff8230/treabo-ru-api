@@ -143,30 +143,30 @@ class RedsmsGateway implements OtpInterface
     }
 
     /**
-     * Start verification via SMS or Telegram Gateway.
+     * Start verification via Wait Call, Telegram Gateway or SMS.
      */
     public function startVerificationVia($phone_number, string $channel = 'sms')
     {
         try {
-            if (!in_array($channel, ['sms', 'telegram'], true)) {
+            if (!in_array($channel, ['wcall', 'telegram', 'sms'], true)) {
                 throw new Exception('Unsupported verification channel');
             }
 
-            // Generate OTP code
-            $otpCode = $this->generateOtpCode(6);
+            $otpCode = $channel === 'wcall' ? null : $this->generateOtpCode(6);
             
             // Format phone number (remove + if present, add 7 for Russian numbers if needed)
             $phone = $this->formatPhoneNumber($phone_number);
             
-            $messageText = $channel === 'telegram'
-                ? $otpCode
-                : str_replace('{code}', $otpCode, $this->smsTemplate);
-
             $data = [
-                'route' => $channel === 'telegram' ? 'tgauth' : 'sms',
+                'route' => $channel === 'telegram' ? 'tgauth' : $channel,
                 'to' => $phone,
-                'text' => $messageText,
             ];
+
+            if ($channel !== 'wcall') {
+                $data['text'] = $channel === 'telegram'
+                    ? $otpCode
+                    : str_replace('{code}', $otpCode, $this->smsTemplate);
+            }
 
             if ($channel === 'sms') {
                 if (empty($this->sender)) {
@@ -196,12 +196,18 @@ class RedsmsGateway implements OtpInterface
                 ]);
                 throw new Exception('UUID not received from REDSMS API response');
             }
+
+            $callTo = $response['items'][0]['replacedFrom'] ?? null;
+            if ($channel === 'wcall' && !$callTo) {
+                throw new Exception('Wait Call number was not received from REDSMS API response');
+            }
             
             // Store OTP code temporarily (expires in 5 minutes)
             cache()->put("redsms_otp_{$uuid}", [
                 'code' => $otpCode,
                 'phone' => $phone,
                 'channel' => $channel,
+                'call_to' => $callTo,
                 'created_at' => now(),
             ], now()->addMinutes(5));
             
@@ -233,6 +239,16 @@ class RedsmsGateway implements OtpInterface
             
             if (!$otpData) {
                 return new Result(['Verification check failed: OTP code expired or invalid.']);
+            }
+
+            if (($otpData['channel'] ?? null) === 'wcall') {
+                $status = $this->getStatus((string) $id);
+                $current = $status['items'][0]['status'] ?? $status['status'] ?? null;
+                if ($current === 'wcall_delivered') {
+                    cache()->forget("redsms_otp_{$id}");
+                    return new Result('success');
+                }
+                return new Result(['Verification check failed: Waiting for customer call.']);
             }
 
             // Check if code matches
@@ -336,6 +352,12 @@ class RedsmsGateway implements OtpInterface
             ]);
             return null;
         }
+    }
+
+    public function getVerificationData(string $uuid): ?array
+    {
+        $data = cache()->get("redsms_otp_{$uuid}");
+        return is_array($data) ? $data : null;
     }
 }
 

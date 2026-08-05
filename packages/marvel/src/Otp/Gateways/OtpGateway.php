@@ -40,4 +40,11 @@ class OtpGateway
 	{
 		return $this->gateway->sendSms($phone_number, $messageBody);
 	}
+
+	public function getVerificationData(string $id): ?array
+	{
+		return method_exists($this->gateway, 'getVerificationData')
+			? $this->gateway->getVerificationData($id)
+			: null;
+	}
 }

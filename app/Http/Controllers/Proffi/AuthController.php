@@ -137,11 +137,11 @@ class AuthController extends Controller
             'role' => ['required', 'in:customer,specialist'],
             'email' => ['nullable', 'email'],
             'city' => ['nullable', 'string'],
-            'channel' => ['nullable', 'in:sms,telegram'],
+            'channel' => ['nullable', 'in:wcall,telegram,sms'],
         ]);
 
         $phone = $this->normalizePhone($data['phone']);
-        $channel = $data['channel'] ?? 'sms';
+        $channel = $data['channel'] ?? 'wcall';
 
         if ($data['purpose'] === 'register') {
             $registerData = $request->validate([
@@ -169,7 +169,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'phone' => ['required', 'string'],
             'otp_id' => ['required', 'string'],
-            'code' => ['required', 'string'],
+            'code' => ['nullable', 'string'],
         ]);
 
         $phone = $this->normalizePhone($data['phone']);
@@ -187,7 +187,10 @@ class AuthController extends Controller
             return response()->json(['detail' => 'Too many attempts'], 429);
         }
 
-        if (!$this->verifyTreaboPhoneOtpCode($otpId, $data['code'], $phone)) {
+        if (!$this->verifyTreaboPhoneOtpCode($otpId, $data['code'] ?? '', $phone)) {
+            if (!isset($data['code']) || trim((string) $data['code']) === '') {
+                return response()->json(['detail' => 'Waiting for customer call'], 409);
+            }
             $context['attempts'] = $attempts + 1;
             $this->cacheTreaboOtpContext($otpId, $context);
 
@@ -362,7 +365,7 @@ class AuthController extends Controller
             return response()->json(['detail' => 'Неверный пароль'], 401);
         }
 
-        if ($this->treaboPhoneOtpEnabled() && !$this->isPhoneVerified($profile)) {
+        if ($this->treaboPhoneOtpEnabled()) {
             return $this->startLoginPhoneOtp($phone, $data['password'], $user, $expectedRole);
         }
 
@@ -609,6 +612,7 @@ class AuthController extends Controller
 
         $data = $request->validate([
             'phone' => ['required', 'string'],
+            'channel' => ['nullable', 'in:wcall,telegram,sms'],
         ]);
 
         $phone = $this->normalizePhone($data['phone']);
@@ -623,7 +627,7 @@ class AuthController extends Controller
             return response()->json(['detail' => 'Этот номер уже используется'], 409);
         }
 
-        $sent = $this->dispatchTreaboPhoneOtp($phone);
+        $sent = $this->dispatchTreaboPhoneOtp($phone, $data['channel'] ?? 'wcall');
         $this->cacheTreaboOtpContext($sent['otp_id'], [
             'phone' => $phone,
             'purpose' => 'change_phone',
@@ -631,7 +635,7 @@ class AuthController extends Controller
             'attempts' => 0,
         ]);
 
-        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id']));
+        return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? 'wcall', $sent['call_to'] ?? null));
     }
 
     private function completeChangePhoneOtp(string $phone, int $userId)
@@ -659,7 +663,7 @@ class AuthController extends Controller
         return $this->authResponse($user->fresh('profile'));
     }
 
-    private function startRegisterPhoneOtp(string $phone, array $data, ?User $existingByEmail = null, string $channel = 'sms')
+    private function startRegisterPhoneOtp(string $phone, array $data, ?User $existingByEmail = null, string $channel = 'wcall')
     {
         $existingUser = $this->findUserByPhone($phone);
         if ($existingUser) {
@@ -745,7 +749,7 @@ class AuthController extends Controller
         return response()->json($this->treaboOtpSentPayload($phone, $sent['otp_id'], $sent['channel'] ?? $channel));
     }
 
-    private function startLoginPhoneOtp(string $phone, string $password, ?User $user = null, ?string $expectedRole = null, string $channel = 'sms')
+    private function startLoginPhoneOtp(string $phone, string $password, ?User $user = null, ?string $expectedRole = null, string $channel = 'wcall')
     {
         if (!$user) {
             $profile = Profile::where('contact', $phone)->first();
