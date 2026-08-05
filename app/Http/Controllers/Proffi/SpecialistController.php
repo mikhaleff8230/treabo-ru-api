@@ -71,6 +71,10 @@ class SpecialistController extends Controller
             return response()->json(['detail' => 'Specialist not found'], 404);
         }
 
+        if ((int) $user->id === (int) $request->user()->id) {
+            return response()->json(['detail' => 'Нельзя создать чат с самим собой'], 400);
+        }
+
         $taskId = $request->input('task_id');
         $task = null;
 

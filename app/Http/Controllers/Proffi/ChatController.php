@@ -31,6 +31,7 @@ class ChatController extends Controller
 
         return ProffiChat::with(['task', 'customer.profile', 'specialist.profile'])
             ->where(fn ($query) => $query->where('customer_id', $userId)->orWhere('specialist_id', $userId))
+            ->whereColumn('customer_id', '!=', 'specialist_id')
             ->latest('updated_at')
             ->get()
             ->map(fn (ProffiChat $chat) => $this->mapChat($chat, $userId))
@@ -302,9 +303,10 @@ class ChatController extends Controller
 
     private function mapChat(ProffiChat $chat, int $currentUserId): array
     {
-        $otherUserId = (int) $chat->customer_id === $currentUserId
-            ? (int) $chat->specialist_id
-            : (int) $chat->customer_id;
+        $currentUserIsCustomer = (int) $chat->customer_id === $currentUserId;
+        $otherUser = $currentUserIsCustomer ? $chat->specialist : $chat->customer;
+        $otherUserId = $currentUserIsCustomer ? (int) $chat->specialist_id : (int) $chat->customer_id;
+        $otherRole = $currentUserIsCustomer ? 'specialist' : 'customer';
 
         $presence = ProffiUserPresence::where('user_id', $otherUserId)->first();
         $otherIsOnline = $presence
@@ -326,6 +328,12 @@ class ChatController extends Controller
             'specialist_avatar' => $chat->specialist?->avatar ?: $chat->specialist?->profile?->avatar,
             'specialist_phone_masked' => $this->maskPhone($chat->specialist?->phone ?: $chat->specialist?->profile?->contact),
             'specialist_city' => $chat->specialist?->profile?->proffi_city,
+            'other_id' => (string) $otherUserId,
+            'other_role' => $otherRole,
+            'other_name' => $otherUser?->name,
+            'other_avatar' => $otherUser?->avatar ?: $otherUser?->profile?->avatar,
+            'other_phone_masked' => $this->maskPhone($otherUser?->phone ?: $otherUser?->profile?->contact),
+            'other_city' => $otherUser?->profile?->proffi_city,
             'last_message' => $chat->last_message,
             'last_message_at' => optional($chat->last_message_at)->toIso8601String(),
             'unread_count' => $this->unreadCount($chat, $currentUserId),

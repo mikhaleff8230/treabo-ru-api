@@ -31,7 +31,9 @@ class TaskController extends Controller
 
     public function index(Request $request)
     {
-        $query = ProffiTask::with(['customer.profile', 'work', 'categoryEntity'])->where('status', 'open');
+        $query = ProffiTask::with(['customer.profile', 'work', 'categoryEntity'])
+            ->withCount('applications')
+            ->where('status', 'open');
 
         $categoryIds = $this->categorySearch->resolveCategoryIds(
             $request->query('category_id') ?: ($request->filled('category') ? (string) $request->query('category') : null),
@@ -196,6 +198,7 @@ class TaskController extends Controller
     public function mine(Request $request)
     {
         return ProffiTask::with(['customer.profile', 'work', 'categoryEntity'])
+            ->withCount('applications')
             ->where('customer_id', $request->user()->id)
             ->latest()
             ->get()
@@ -317,6 +320,11 @@ class TaskController extends Controller
     public function contactSpecialist(Request $request, ProffiTask $task, \Marvel\Database\Models\User $specialist)
     {
         $user = $request->user();
+
+        if ((int) $specialist->id === (int) $task->customer_id) {
+            return response()->json(['detail' => 'Нельзя создать чат с самим собой'], 400);
+        }
+
         $isCustomer = (int) $task->customer_id === (int) $user->id;
         $isSpecialist = (int) $specialist->id === (int) $user->id;
 
@@ -401,6 +409,7 @@ class TaskController extends Controller
             'is_closed' => $isClosed,
             'has_applied' => $hasApplied,
             'is_favorite' => $isFavorite,
+            'applications_count' => (int) ($task->applications_count ?? $task->applications()->count()),
             'customer_id' => (string) $task->customer_id,
             'customer_name' => $task->customer?->name,
             'customer_avatar' => $task->customer?->avatar ?: $task->customer?->profile?->avatar,
