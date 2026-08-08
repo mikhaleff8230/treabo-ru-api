@@ -24,7 +24,22 @@ class ExpoPushService
 
         try {
             $response = Http::timeout(8)->acceptJson()->post('https://exp.host/--/api/v2/push/send', $messages);
-            if (!$response->successful()) Log::warning('Expo push rejected', ['status' => $response->status()]);
+            if (!$response->successful()) {
+                Log::warning('Expo push rejected', ['status' => $response->status(), 'body' => $response->json()]);
+                return;
+            }
+
+            $tickets = $response->json('data', []);
+            if (isset($tickets['status'])) $tickets = [$tickets];
+            foreach ($tickets as $index => $ticket) {
+                if (($ticket['status'] ?? null) !== 'error') continue;
+                Log::warning('Expo push ticket failed', [
+                    'user_id' => $userId,
+                    'token_suffix' => substr($tokens[$index] ?? '', -12),
+                    'error' => $ticket['details']['error'] ?? null,
+                    'message' => $ticket['message'] ?? null,
+                ]);
+            }
         } catch (\Throwable $e) {
             Log::warning('Expo push failed', ['error' => $e->getMessage()]);
         }
