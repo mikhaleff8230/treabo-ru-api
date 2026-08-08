@@ -149,12 +149,13 @@ class ChatController extends Controller
 
         $this->notifyRecipientByEmail($chat, $request->user(), $text);
         $recipientId = (int) $chat->customer_id === $senderId ? (int) $chat->specialist_id : (int) $chat->customer_id;
+        $recipientScheme = (int) $chat->customer_id === $recipientId ? 'treabo-client' : 'treabo-specialist';
         $senderName = trim((string) ($request->user()->name ?? 'Treabo')) ?: 'Treabo';
         $this->push->sendToUser($recipientId, $senderName, $text, [
             'type' => 'chat_message',
             'chat_id' => (string) $chat->id,
             'message_id' => (string) $message->id,
-            'url' => 'treabo-specialist://chat/' . $chat->id,
+            'url' => $recipientScheme . '://chat/' . $chat->id,
         ]);
 
         return response()->json($this->mapMessage($message), 201);
