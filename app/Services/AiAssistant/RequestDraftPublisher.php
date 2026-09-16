@@ -6,6 +6,7 @@ use App\Models\AiLearningEvent;
 use App\Models\ProffiTask;
 use App\Models\RequestDraft;
 use App\Models\RequestDraftEvent;
+use App\Models\RequestDraftMessage;
 use App\Models\TreaboResponseSetting;
 use App\Services\AiKnowledge\KnowledgeTextNormalizer;
 use App\Services\Proffi\MasterMatchingService;
@@ -55,11 +56,20 @@ class RequestDraftPublisher
                 $missing[] = 'city';
             }
             $address = trim((string) ($snapshot['location']['address'] ?? ''));
-            if ($address !== '' && (
-                empty($snapshot['location']['confirmed'])
-                || !is_numeric($snapshot['location']['lat'] ?? null)
-                || !is_numeric($snapshot['location']['lng'] ?? null)
-            )) {
+            if ($address === '') {
+                $missing[] = 'address';
+            }
+            $lat = $snapshot['location']['lat'] ?? null;
+            $lng = $snapshot['location']['lng'] ?? null;
+            if ($address === ''
+                || empty($snapshot['location']['confirmed'])
+                || !is_numeric($lat)
+                || !is_numeric($lng)
+                || (float) $lat < -90
+                || (float) $lat > 90
+                || (float) $lng < -180
+                || (float) $lng > 180
+            ) {
                 $missing[] = 'address_confirmation';
             }
             if ($missing) {
@@ -102,6 +112,7 @@ class RequestDraftPublisher
                 'photos' => collect($snapshot['photos'] ?? [])->pluck('url')->filter()->values()->all(),
                 'ai_details' => [
                     'request_draft_id' => $draft->id,
+                    'source_place_id' => $draft->source_place_id,
                     'catalog_version_id' => $draft->catalog_version_id,
                     'answers' => $draft->answers()->with('question')->get()->map(fn ($answer) => [
                         'question_id' => $answer->question_id,
@@ -121,6 +132,7 @@ class RequestDraftPublisher
                 ],
                 'response_price_mdl' => $settings->default_response_price_mdl,
                 'customer_id' => $userId,
+                'source_place_id' => $draft->source_place_id,
                 'status' => 'open',
             ]);
 
@@ -138,6 +150,12 @@ class RequestDraftPublisher
                 'to_status' => 'published',
                 'payload' => ['task_id' => $task->id],
                 'actor_user_id' => $userId,
+            ]);
+            RequestDraftMessage::create([
+                'draft_id' => $draft->id,
+                'turn_no' => (int) $draft->messages()->max('turn_no') + 1,
+                'role' => 'assistant',
+                'content' => 'Заявка опубликована. Мастера смогут откликнуться на неё.',
             ]);
             AiLearningEvent::create([
                 'request_draft_id' => $draft->id,

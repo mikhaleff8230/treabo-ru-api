@@ -155,6 +155,31 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Review::class, 'user_id');
     }
 
+    public function places(): HasMany
+    {
+        return $this->hasMany(Place::class, 'user_id');
+    }
+
+    public function publishedPlaces(): HasMany
+    {
+        return $this->hasMany(Place::class, 'user_id')->where('status', 'published');
+    }
+
+    public function proffiReviews(): HasMany
+    {
+        return $this->hasMany(\App\Models\ProffiReview::class, 'specialist_id');
+    }
+
+    public function recentProffiReviews(): HasMany
+    {
+        return $this->hasMany(\App\Models\ProffiReview::class, 'specialist_id')->latest();
+    }
+
+    public function proffiPresence(): HasOne
+    {
+        return $this->hasOne(\App\Models\ProffiUserPresence::class, 'user_id');
+    }
+
     /**
      * @return HasMany
      */

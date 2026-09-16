@@ -414,6 +414,7 @@ class TaskController extends Controller
             'customer_name' => $task->customer?->name,
             'customer_avatar' => $task->customer?->avatar ?: $task->customer?->profile?->avatar,
             'accepted_specialist_id' => $task->accepted_specialist_id ? (string) $task->accepted_specialist_id : null,
+            'source_place_id' => $task->source_place_id ? (string) $task->source_place_id : null,
             'photos' => $task->photos ?: [],
             'details' => $task->ai_details ?: null,
             'ai_details' => $task->ai_details ?: null,

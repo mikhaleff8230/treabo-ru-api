@@ -4,7 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Marvel\Database\Models\Place;
 
 class RequestDraft extends Model
 {
@@ -38,5 +40,10 @@ class RequestDraft extends Model
     public function events(): HasMany
     {
         return $this->hasMany(RequestDraftEvent::class, 'draft_id');
+    }
+
+    public function sourcePlace(): BelongsTo
+    {
+        return $this->belongsTo(Place::class, 'source_place_id');
     }
 }

@@ -15,6 +15,7 @@ class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         // 'App\Models\Model' => 'App\Policies\ModelPolicy',
         \Marvel\Database\Models\Comment::class => \Marvel\Policies\CommentPolicy::class,
+        \Marvel\Database\Models\Place::class => \Marvel\Policies\PlacePolicy::class,
     ];
 
     /**

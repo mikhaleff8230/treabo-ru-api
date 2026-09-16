@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Marvel\Database\Models\Place;
 use Marvel\Database\Models\User;
 
 class ProffiTask extends Model
@@ -60,6 +61,16 @@ class ProffiTask extends Model
     public function attributeValues(): HasMany
     {
         return $this->hasMany(JobAttributeValue::class, 'job_id');
+    }
+
+    public function sourcePlace(): BelongsTo
+    {
+        return $this->belongsTo(Place::class, 'source_place_id');
+    }
+
+    public function placeDrafts(): HasMany
+    {
+        return $this->hasMany(Place::class, 'source_task_id');
     }
 
     public function displayTitle(): string

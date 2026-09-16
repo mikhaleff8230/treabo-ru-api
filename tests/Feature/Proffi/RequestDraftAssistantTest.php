@@ -117,6 +117,262 @@ class RequestDraftAssistantTest extends TestCase
         )->assertConflict()->assertJsonPath('error.code', 'DRAFT_VERSION_CONFLICT');
     }
 
+    public function test_short_ambiguous_message_uses_semantic_clarification_and_restores_full_transcript(): void
+    {
+        [$work] = $this->catalog();
+        $ai = Mockery::mock(DialogueInferenceService::class);
+        $ai->shouldReceive('infer')->once()->andReturn([
+            'input_class' => 'service_request',
+            'understanding' => [
+                'subject' => 'унитаз',
+                'action' => null,
+                'problem' => null,
+                'component' => null,
+                'symptoms' => [],
+                'context' => 'сантехника',
+            ],
+            'intents' => [[
+                'category_id' => 'plumbing',
+                'service_id' => null,
+                'label' => 'Работы с унитазом',
+                'confidence' => 0.4,
+            ]],
+            'extracted_facts' => [],
+            'conflicts' => [],
+            'clarification' => [
+                'needed' => true,
+                'question' => 'Что нужно сделать с унитазом?',
+                'quick_replies' => ['Установить или заменить', 'Починить', 'Устранить засор', 'Другое'],
+            ],
+            'assistant_text' => 'Что нужно сделать с унитазом?',
+            'confidence' => ['input' => 1, 'category' => 0.9, 'service' => 0.4, 'facts' => 0],
+            '_catalog_version_id' => null,
+        ]);
+        $ai->shouldReceive('infer')->once()->andReturn([
+            'input_class' => 'service_request',
+            'understanding' => [
+                'subject' => 'унитаз',
+                'action' => 'ремонт',
+                'problem' => 'неисправность',
+                'component' => null,
+                'symptoms' => [],
+                'context' => 'сантехника',
+            ],
+            'intents' => [[
+                'category_id' => 'plumbing',
+                'service_id' => $work->id,
+                'label' => 'Ремонт унитаза',
+                'confidence' => 0.95,
+            ]],
+            'extracted_facts' => [],
+            'conflicts' => [],
+            'clarification' => ['needed' => false, 'question' => null, 'quick_replies' => []],
+            'assistant_text' => 'Понял.',
+            'confidence' => ['input' => 1, 'category' => 0.98, 'service' => 0.95, 'facts' => 0],
+            '_catalog_version_id' => null,
+        ]);
+        $this->app->instance(DialogueInferenceService::class, $ai);
+
+        $clientDraftId = (string) Str::uuid();
+        $created = $this->postJson('/api/proffi/request-drafts', [
+            'initial_text' => 'унитаз',
+            'client_draft_id' => $clientDraftId,
+            'idempotency_key' => 'create-'.Str::uuid(),
+        ])->assertCreated()
+            ->assertJsonPath('data.ui_action.type', 'clarify_intent')
+            ->assertJsonCount(3, 'data.ui_action.quick_replies')
+            ->assertJsonPath('data.ui_action.allow_free_text', true)
+            ->assertJsonPath('data.messages.0.text', 'унитаз')
+            ->assertJsonPath('data.messages.1.text', 'Что нужно сделать с унитазом?');
+
+        $headers = ['X-Draft-Recovery-Token' => $created->json('recovery_token')];
+        $answered = $this->postJson('/api/proffi/request-drafts/'.$created->json('data.draft.id').'/turns', [
+            'client_turn_id' => (string) Str::uuid(),
+            'expected_version' => $created->json('data.draft.version'),
+            'message' => 'Починить',
+        ], $headers)->assertOk()
+            ->assertJsonPath('data.draft.work.id', $work->id)
+            ->assertJsonPath('data.messages.2.text', 'Починить');
+
+        $this->getJson(
+            "/api/proffi/request-drafts/latest?client_draft_id={$clientDraftId}",
+            $headers
+        )->assertOk()
+            ->assertJsonCount(count($answered->json('data.messages')), 'data.messages')
+            ->assertJsonPath('data.messages.0.text', 'унитаз')
+            ->assertJsonPath('data.messages.2.text', 'Починить');
+
+        $this->assertDatabaseHas('request_draft_messages', [
+            'draft_id' => $created->json('data.draft.id'),
+            'role' => 'user',
+            'content' => 'Починить',
+        ]);
+    }
+
+    /**
+     * @dataProvider ambiguousSemanticPhrases
+     */
+    public function test_ambiguous_semantic_phrases_ask_one_useful_question(
+        string $input,
+        array $understanding,
+        string $question,
+        array $quickReplies
+    ): void {
+        $this->catalog();
+        $ai = Mockery::mock(DialogueInferenceService::class);
+        $ai->shouldReceive('infer')->once()->andReturn([
+            'input_class' => 'service_request',
+            'understanding' => $understanding,
+            'intents' => [[
+                'category_id' => 'plumbing',
+                'service_id' => null,
+                'label' => $understanding['subject'] ?? 'Бытовая задача',
+                'confidence' => 0.4,
+            ]],
+            'extracted_facts' => [],
+            'conflicts' => [],
+            'clarification' => [
+                'needed' => true,
+                'question' => $question,
+                'quick_replies' => $quickReplies,
+            ],
+            'assistant_text' => $question,
+            'confidence' => ['input' => 1, 'category' => 0.9, 'service' => 0.4, 'facts' => 0],
+            '_catalog_version_id' => null,
+        ]);
+        $this->app->instance(DialogueInferenceService::class, $ai);
+
+        $this->postJson('/api/proffi/request-drafts', [
+            'initial_text' => $input,
+            'client_draft_id' => (string) Str::uuid(),
+            'idempotency_key' => 'create-'.Str::uuid(),
+        ])->assertCreated()
+            ->assertJsonPath('data.ui_action.type', 'clarify_intent')
+            ->assertJsonPath('data.ui_action.message', $question)
+            ->assertJsonPath('data.ui_action.allow_free_text', true)
+            ->assertJsonCount(min(3, count($quickReplies)), 'data.ui_action.quick_replies');
+    }
+
+    public static function ambiguousSemanticPhrases(): array
+    {
+        return [
+            'toilet leak' => [
+                'унитаз течёт',
+                ['subject' => 'унитаз', 'action' => 'ремонт', 'problem' => 'протечка', 'component' => null, 'symptoms' => ['течёт'], 'context' => 'сантехника'],
+                'Где именно появляется вода?',
+                ['Из бачка', 'У основания', 'У трубы'],
+            ],
+            'socket' => [
+                'розетка',
+                ['subject' => 'розетка', 'action' => null, 'problem' => null, 'component' => null, 'symptoms' => [], 'context' => 'электрика'],
+                'Что нужно сделать с розеткой?',
+                ['Установить новую', 'Не работает', 'Перенести'],
+            ],
+            'sink leak' => [
+                'что-то течёт под раковиной',
+                ['subject' => 'раковина', 'action' => 'ремонт', 'problem' => 'протечка', 'component' => null, 'symptoms' => ['течёт снизу'], 'context' => 'сантехника'],
+                'Вода течёт из сифона или из трубы или шланга?',
+                ['Из сифона', 'Из трубы', 'Из шланга'],
+            ],
+        ];
+    }
+
+    public function test_short_high_confidence_service_request_still_asks_for_description_details(): void
+    {
+        [$work] = $this->catalog();
+        $ai = Mockery::mock(DialogueInferenceService::class);
+        $ai->shouldReceive('infer')->once()->andReturn([
+            'input_class' => 'service_request',
+            'understanding' => [
+                'subject' => 'ванная комната',
+                'action' => 'ремонт',
+                'problem' => null,
+                'component' => null,
+                'symptoms' => [],
+                'context' => 'квартира',
+            ],
+            'intents' => [[
+                'category_id' => 'plumbing',
+                'service_id' => $work->id,
+                'label' => $work->title,
+                'confidence' => 0.98,
+            ]],
+            'extracted_facts' => [],
+            'conflicts' => [],
+            'clarification' => ['needed' => false, 'question' => null, 'quick_replies' => []],
+            'assistant_text' => 'Заявка определена.',
+            'confidence' => ['input' => 1, 'category' => 0.99, 'service' => 0.98, 'facts' => 0.2],
+            '_catalog_version_id' => null,
+        ]);
+        $this->app->instance(DialogueInferenceService::class, $ai);
+
+        $this->postJson('/api/proffi/request-drafts', [
+            'initial_text' => 'ремонт ванной комнаты под ключ',
+            'client_draft_id' => (string) Str::uuid(),
+            'idempotency_key' => 'create-'.Str::uuid(),
+        ])->assertCreated()
+            ->assertJsonPath('data.draft.work.id', $work->id)
+            ->assertJsonPath('data.ui_action.type', 'clarify_intent')
+            ->assertJsonPath(
+                'data.ui_action.message',
+                'Что именно должно входить в работу и какой результат вы хотите получить?'
+            )
+            ->assertJsonPath('data.ui_action.allow_free_text', true);
+    }
+
+    /**
+     * @dataProvider detailedSemanticPhrases
+     */
+    public function test_detailed_semantic_phrases_skip_intent_clarification(string $input, array $understanding): void
+    {
+        [$work, $question] = $this->catalog();
+        $ai = Mockery::mock(DialogueInferenceService::class);
+        $ai->shouldReceive('infer')->once()->andReturn([
+            'input_class' => 'service_request',
+            'understanding' => $understanding,
+            'intents' => [[
+                'category_id' => 'plumbing',
+                'service_id' => $work->id,
+                'label' => $work->title,
+                'confidence' => 0.95,
+            ]],
+            'extracted_facts' => [],
+            'conflicts' => [],
+            'clarification' => ['needed' => false, 'question' => null, 'quick_replies' => []],
+            'assistant_text' => 'Понял.',
+            'confidence' => ['input' => 1, 'category' => 0.98, 'service' => 0.95, 'facts' => 0],
+            '_catalog_version_id' => null,
+        ]);
+        $this->app->instance(DialogueInferenceService::class, $ai);
+
+        $this->postJson('/api/proffi/request-drafts', [
+            'initial_text' => $input,
+            'client_draft_id' => (string) Str::uuid(),
+            'idempotency_key' => 'create-'.Str::uuid(),
+        ])->assertCreated()
+            ->assertJsonPath('data.draft.work.id', $work->id)
+            ->assertJsonPath('data.ui_action.type', 'ask_question')
+            ->assertJsonPath('data.ui_action.question.id', $question->id);
+    }
+
+    public static function detailedSemanticPhrases(): array
+    {
+        return [
+            'replace toilet' => [
+                'хочу старый унитаз снять и поставить новый',
+                ['subject' => 'унитаз', 'action' => 'замена', 'problem' => null, 'component' => null, 'symptoms' => [], 'context' => 'сантехника'],
+            ],
+            'install socket' => [
+                'нужно установить новую розетку на кухне рядом с рабочей поверхностью',
+                ['subject' => 'розетка', 'action' => 'установка', 'problem' => null, 'component' => null, 'symptoms' => [], 'context' => 'электрика'],
+            ],
+            'broken cistern button' => [
+                'кнопка бачка сломалась и теперь слив воды совсем не работает',
+                ['subject' => 'унитаз', 'action' => 'ремонт', 'problem' => 'поломка', 'component' => 'кнопка бачка', 'symptoms' => ['сломалась'], 'context' => 'сантехника'],
+            ],
+        ];
+    }
+
     public function test_photo_metadata_is_kept_out_of_description_and_master_summary(): void
     {
         [$work, $question] = $this->catalog();

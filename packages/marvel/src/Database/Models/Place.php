@@ -2,6 +2,10 @@
 
 namespace Marvel\Database\Models;
 
+use App\Models\ProffiCategory;
+use App\Models\ProffiTask;
+use App\Models\ProffiWork;
+use App\Models\RussiaLocation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -16,11 +20,32 @@ class Place extends Model
         'title',
         'slug',
         'description',
+        'category_id',
+        'work_id',
+        'price',
+        'hide_price',
+        'city',
+        'location_id',
+        'lat',
+        'lng',
+        'duration_days',
+        'status',
+        'published_at',
+        'source_task_id',
         'language',
         'source_url',
     ];
 
     protected $appends = ['url'];
+
+    protected $casts = [
+        'price' => 'integer',
+        'hide_price' => 'boolean',
+        'lat' => 'float',
+        'lng' => 'float',
+        'duration_days' => 'integer',
+        'published_at' => 'datetime',
+    ];
 
     public function user()
     {
@@ -30,6 +55,31 @@ class Place extends Model
     public function images()
     {
         return $this->hasMany(PlaceImage::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(ProffiCategory::class, 'category_id', 'id');
+    }
+
+    public function work()
+    {
+        return $this->belongsTo(ProffiWork::class, 'work_id');
+    }
+
+    public function location()
+    {
+        return $this->belongsTo(RussiaLocation::class, 'location_id');
+    }
+
+    public function sourceTask()
+    {
+        return $this->belongsTo(ProffiTask::class, 'source_task_id');
+    }
+
+    public function requestTasks()
+    {
+        return $this->hasMany(ProffiTask::class, 'source_place_id');
     }
 
     public function videos()
@@ -243,4 +293,4 @@ class Place extends Model
             ]);
         }
     }
-} 
+}

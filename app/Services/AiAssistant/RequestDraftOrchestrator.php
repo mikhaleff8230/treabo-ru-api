@@ -11,6 +11,7 @@ use App\Models\RequestDraft;
 use App\Models\RequestDraftAnswer;
 use App\Models\RequestDraftEvent;
 use App\Models\RequestDraftMessage;
+use App\Services\AiKnowledge\KnowledgeRetrievalService;
 use App\Services\AiKnowledge\KnowledgeTextNormalizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,6 +21,7 @@ class RequestDraftOrchestrator
     public function __construct(
         private readonly DialogueInferenceService $inference,
         private readonly ConditionalQuestionEngine $questionEngine,
+        private readonly KnowledgeRetrievalService $retrieval,
         private readonly KnowledgeTextNormalizer $normalizer,
     ) {
     }
@@ -41,9 +43,12 @@ class RequestDraftOrchestrator
                 'guest_token_hash' => $guestToken ? hash('sha256', $guestToken) : null,
                 'client_draft_id' => $data['client_draft_id'] ?? null,
                 'idempotency_key' => $data['idempotency_key'] ?? null,
+                'source_place_id' => $data['_source_place_id'] ?? null,
                 'status' => 'classifying',
                 'version' => 0,
                 'catalog_version_id' => $catalogVersion?->id,
+                'selected_category_id' => $data['_preset_category_id'] ?? null,
+                'selected_service_id' => $data['_preset_service_id'] ?? null,
                 'snapshot' => $this->initialSnapshot($data),
                 'expires_at' => now()->addDays((int) config('ai_assistant.draft_ttl_days', 30)),
                 'last_activity_at' => now(),
@@ -53,8 +58,25 @@ class RequestDraftOrchestrator
             return $draft;
         });
 
-        $message = $this->message($draft, 'user', $data['initial_text'], null, null);
-        $this->processFreeText($draft, $message);
+        if (!empty($data['_skip_initial_inference'])) {
+            $snapshot = $draft->snapshot;
+            $assistantText = trim((string) ($data['_initial_assistant_text']
+                ?? 'Расскажите, что хотите изменить или сделать иначе?'));
+            $snapshot['_ui_action'] = [
+                'type' => 'clarify_intent',
+                'message' => $assistantText,
+                'quick_replies' => [],
+                'allow_free_text' => true,
+            ];
+            $draft->update(['snapshot' => $snapshot]);
+            $this->transition($draft, 'clarifying', 'reference_context_ready', [
+                'source_place_id' => $draft->source_place_id,
+            ]);
+            $this->assistantMessage($draft, $assistantText);
+        } else {
+            $message = $this->message($draft, 'user', $data['initial_text'], null, null);
+            $this->processFreeText($draft, $message);
+        }
         $result = $this->response($draft->fresh());
         if ($guestToken) {
             $result['recovery_token'] = $guestToken;
@@ -151,10 +173,19 @@ class RequestDraftOrchestrator
                     '/budget/amount' => $snapshot['budget']['amount'] = is_numeric($value) ? max(0, (int) $value) : null,
                     '/budget/min' => $snapshot['budget']['min'] = is_numeric($value) ? max(0, (int) $value) : null,
                     '/budget/max' => $snapshot['budget']['max'] = is_numeric($value) ? max(0, (int) $value) : null,
+                    '/photos' => $snapshot['photos'] = $this->photos($value),
                     '/title' => $snapshot['title'] = $this->shortText($value, 100),
                     '/description' => $snapshot['description'] = $this->shortText($value, 4000),
                     default => throw new RequestDraftException('INVALID_PATCH_PATH', "Поле {$path} нельзя изменить.", 422),
                 };
+            }
+            $location = $snapshot['location'] ?? [];
+            if (!empty($location['confirmed']) && !$this->validConfirmedLocation($location)) {
+                throw new RequestDraftException(
+                    'INVALID_ADDRESS',
+                    'Выберите полный адрес из подсказки и подтвердите точку на карте.',
+                    422
+                );
             }
             $draft->update(['snapshot' => $snapshot]);
             $selectionAfter = [
@@ -162,6 +193,12 @@ class RequestDraftOrchestrator
                 'service_id' => $draft->selected_service_id,
             ];
             if ($selectionBefore !== $selectionAfter) {
+                $selectionLabel = $draft->selected_service_id
+                    ? ProffiWork::find($draft->selected_service_id)?->title
+                    : ProffiCategory::find($draft->selected_category_id)?->name_ru;
+                if ($selectionLabel) {
+                    $this->message($draft, 'user', $selectionLabel, null, null);
+                }
                 $this->learningEvent(
                     $draft,
                     'classification_corrected',
@@ -185,6 +222,18 @@ class RequestDraftOrchestrator
         $draft->loadMissing(['messages', 'answers']);
         $snapshot = $this->buildSnapshot($draft);
         $uiAction = $snapshot['_ui_action'] ?? ['type' => 'wait'];
+        if (in_array(($uiAction['type'] ?? null), ['manual_fallback', 'choose_category', 'choose_service'], true)) {
+            $uiAction = [
+                'type' => 'ask_question',
+                'question' => [
+                    'id' => null,
+                    'key' => 'service_description',
+                    'text' => 'Уточните задачу своими словами: что именно нужно сделать и с каким объектом?',
+                    'field_type' => 'text',
+                    'options' => [],
+                ],
+            ];
+        }
         unset($snapshot['_ui_action']);
 
         return [
@@ -192,6 +241,7 @@ class RequestDraftOrchestrator
                 'draft' => $snapshot,
                 'ui_action' => $uiAction,
                 'progress' => $this->progress($draft),
+                'messages' => $this->safeTranscript($draft),
             ],
         ];
     }
@@ -201,58 +251,168 @@ class RequestDraftOrchestrator
         try {
             $result = $this->inference->infer($draft, $message);
         } catch (DialogueInferenceException $e) {
+            if (!$draft->selected_service_id) {
+                $this->resolveServiceAfterAiTimeout($draft, $message);
+                $draft->refresh();
+            }
+            if ($draft->selected_service_id) {
+                $this->continueAfterAiTimeout($draft, $message);
+
+                return;
+            }
             $snapshot = $draft->snapshot;
+            $fallbackMessage = 'Уточните, что именно не работает и какой результат вы хотите получить?';
             $snapshot['_ui_action'] = [
-                'type' => 'manual_fallback',
-                'message' => 'AI временно недоступен. Выберите услугу вручную — введённый текст сохранён.',
+                'type' => 'clarify_intent',
+                'message' => $fallbackMessage,
+                'quick_replies' => [],
+                'allow_free_text' => true,
             ];
-            $this->transition($draft, 'manual_selection', 'ai_unavailable', ['message' => $e->getMessage()]);
+            $this->transition($draft, 'clarifying', 'ai_unavailable', ['message' => $e->getMessage()]);
             $draft->update(['snapshot' => $snapshot]);
+            $this->assistantMessage($draft, $fallbackMessage);
 
             return;
         }
 
         $snapshot = $draft->snapshot;
         $snapshot['input_class'] = $result['input_class'];
+        $snapshot['understanding'] = $result['understanding'] ?? ($snapshot['understanding'] ?? [
+            'subject' => null, 'action' => null, 'problem' => null,
+            'component' => null, 'symptoms' => [], 'context' => null,
+        ]);
         $snapshot['confidence'] = [
             ...$snapshot['confidence'],
             ...$result['confidence'],
         ];
+        $normalizedDescription = trim((string) ($result['normalized_description'] ?? ''));
+        if ($normalizedDescription !== '') {
+            $snapshot['normalized_description'] = $normalizedDescription;
+        }
+        $snapshot['description'] = $this->description($draft, $snapshot['normalized_description'] ?? null);
         $snapshot['multiple_services_detected'] = count(array_filter(
             $result['intents'],
             fn ($intent) => !empty($intent['service_id'])
         )) > 1;
         $snapshot['intents'] = $result['intents'];
+        $snapshot['candidate_service_ids'] = collect([
+            ...collect($result['intents'])->pluck('service_id')->all(),
+            ...($result['_candidate_service_ids'] ?? []),
+        ])
+            ->filter()
+            ->unique()
+            ->take(5)
+            ->values()
+            ->all();
         $draft->input_class = $result['input_class'];
         $draft->catalog_version_id = $result['_catalog_version_id'] ?: $draft->catalog_version_id;
+        $catalogLocked = !empty($snapshot['reference_place']['catalog_locked'])
+            && !empty($draft->source_place_id)
+            && !empty($draft->selected_category_id)
+            && !empty($draft->selected_service_id);
+
+        $intent = collect($result['intents'])->sortByDesc('confidence')->first();
+        $candidateWorkId = collect([
+            $intent['service_id'] ?? null,
+            ...($snapshot['candidate_service_ids'] ?? []),
+        ])->filter()->unique()->first();
+        $candidateWork = $candidateWorkId
+            ? ProffiWork::query()->whereKey($candidateWorkId)->where('is_active', true)->first()
+            : null;
+        if (!$catalogLocked && $result['input_class'] === 'service_request' && $intent && $intent['category_id']) {
+            $draft->selected_category_id = $intent['category_id'];
+        }
+        $serviceResolved = $catalogLocked || (
+            $result['input_class'] === 'service_request'
+            && $candidateWork
+            && $result['confidence']['service'] >= config('ai_assistant.service_confidence', 0.65)
+        );
+        if ($serviceResolved && !$catalogLocked) {
+            $draft->selected_category_id = $candidateWork->category_id;
+            $draft->selected_service_id = $candidateWork->id;
+            $snapshot['service_auto_selected'] = false;
+        } elseif ($catalogLocked) {
+            $snapshot['service_auto_selected'] = false;
+        }
+        $draft->save();
+
+        $understanding = $snapshot['understanding'];
+        $clarification = $result['clarification'] ?? [
+            'needed' => false, 'question' => null, 'quick_replies' => [],
+        ];
+        $hasSemanticSignal = collect([
+            $understanding['subject'],
+            $understanding['action'],
+            $understanding['problem'],
+            $understanding['component'],
+            $understanding['context'],
+        ])->filter()->isNotEmpty() || !empty($understanding['symptoms']);
+        $clarificationCount = (int) ($snapshot['semantic_clarification_count'] ?? 0);
+        $clarificationLimit = (int) config('ai_assistant.semantic_clarification_limit', 3);
+        $messageWordCount = count(preg_split('/\s+/u', trim((string) $message->content), -1, PREG_SPLIT_NO_EMPTY));
+        $isFirstShortServiceMessage = $result['input_class'] === 'service_request'
+            && $draft->messages()->where('role', 'user')->count() === 1
+            && $messageWordCount <= 6;
+        $clarificationQuestion = !empty($clarification['needed']) && !empty($clarification['question'])
+            ? $clarification['question']
+            : ($isFirstShortServiceMessage
+                ? 'Что именно должно входить в работу и какой результат вы хотите получить?'
+                : null);
+        if (in_array($result['input_class'], ['service_request', 'insufficient'], true)
+            && $hasSemanticSignal
+            && ($isFirstShortServiceMessage || !empty($clarification['needed']))
+            && $clarificationQuestion
+            && $clarificationCount < $clarificationLimit
+        ) {
+            $snapshot['semantic_clarification_count'] = $clarificationCount + 1;
+            $snapshot['_ui_action'] = [
+                'type' => 'clarify_intent',
+                'message' => $clarificationQuestion,
+                'quick_replies' => $isFirstShortServiceMessage && empty($clarification['needed'])
+                    ? []
+                    : array_slice($clarification['quick_replies'], 0, 3),
+                'allow_free_text' => true,
+            ];
+            $draft->snapshot = $snapshot;
+            $draft->save();
+            $this->transition($draft, 'clarifying', 'semantic_clarification', [
+                'clarification_count' => $snapshot['semantic_clarification_count'],
+                'candidate_service_ids' => $snapshot['candidate_service_ids'],
+            ]);
+            $this->assistantMessage($draft, $clarificationQuestion);
+
+            return;
+        }
+
+        if (!$serviceResolved && $result['input_class'] === 'service_request' && $candidateWork) {
+            $draft->selected_category_id = $candidateWork->category_id;
+            $draft->selected_service_id = $candidateWork->id;
+            $snapshot['service_auto_selected'] = true;
+            $draft->save();
+            $serviceResolved = true;
+        }
 
         if ($result['input_class'] !== 'service_request') {
             $draft->meaningless_turns_count++;
-            $manual = $draft->meaningless_turns_count >= 2;
-            $snapshot['_ui_action'] = $manual
-                ? [
-                    'type' => 'manual_fallback',
-                    'message' => 'Не получилось распознать задачу. Выберите категорию и работу вручную.',
-                ]
-                : [
-                    'type' => 'ask_question',
-                    'question' => [
-                        'id' => null,
-                        'key' => 'service_description',
-                        'text' => $result['assistant_text'] ?: 'Что нужно сделать или починить?',
-                        'field_type' => 'text',
-                        'options' => [],
-                    ],
-                ];
+            $snapshot['_ui_action'] = [
+                'type' => 'ask_question',
+                'question' => [
+                    'id' => null,
+                    'key' => 'service_description',
+                    'text' => $result['assistant_text'] ?: 'Что нужно сделать или починить?',
+                    'field_type' => 'text',
+                    'options' => [],
+                ],
+            ];
             $draft->snapshot = $snapshot;
             $draft->save();
-            $this->transition($draft, $manual ? 'manual_selection' : 'clarifying', 'input_not_service');
+            $this->transition($draft, 'clarifying', 'input_not_service');
             $this->learningEvent(
                 $draft,
-                $manual ? 'manual_fallback' : 'unrecognized_text',
+                'unrecognized_text',
                 ['input_class' => $result['input_class']],
                 null,
-                $manual ? 0.7 : 0.4
+                0.4
             );
             $this->assistantMessage($draft, $snapshot['_ui_action']['message'] ?? $snapshot['_ui_action']['question']['text']);
 
@@ -281,21 +441,6 @@ class RequestDraftOrchestrator
             return;
         }
 
-        $intent = collect($result['intents'])->sortByDesc('confidence')->first();
-        if ($intent
-            && $intent['category_id']
-            && $result['confidence']['category'] >= config('ai_assistant.category_confidence', 0.55)
-        ) {
-            $draft->selected_category_id = $intent['category_id'];
-        }
-        if ($intent
-            && $intent['service_id']
-            && $result['confidence']['service'] >= config('ai_assistant.service_confidence', 0.65)
-        ) {
-            $draft->selected_service_id = $intent['service_id'];
-        }
-        $draft->save();
-
         foreach ($result['extracted_facts'] as $fact) {
             if (!$fact['question_id'] || $fact['confidence'] < 0.7) {
                 continue;
@@ -321,7 +466,7 @@ class RequestDraftOrchestrator
             );
         }
 
-        $snapshot['description'] = $this->description($draft);
+        $snapshot['description'] = $this->description($draft, $snapshot['normalized_description'] ?? null);
         $snapshot['title'] = $this->title($draft, $intent['label'] ?? null);
         $snapshot['master_summary'] = $this->masterSummary($draft);
         $draft->snapshot = $snapshot;
@@ -414,27 +559,40 @@ class RequestDraftOrchestrator
         $snapshot = $draft->snapshot;
         if (!$draft->selected_category_id) {
             $snapshot['_ui_action'] = [
-                'type' => 'choose_category',
-                'message' => $assistantText ?: 'Выберите, к какому направлению относится задача.',
+                'type' => 'ask_question',
+                'question' => [
+                    'id' => null,
+                    'key' => 'service_description',
+                    'text' => $assistantText ?: 'Уточните, с каким объектом нужно работать и что требуется сделать?',
+                    'field_type' => 'text',
+                    'options' => [],
+                ],
             ];
             $draft->update(['snapshot' => $snapshot]);
-            $this->transition($draft, 'manual_selection', 'category_unresolved');
+            $this->transition($draft, 'clarifying', 'category_unresolved');
+            $this->assistantMessage($draft, $snapshot['_ui_action']['question']['text']);
 
             return;
         }
         if (!$draft->selected_service_id) {
             $snapshot['_ui_action'] = [
-                'type' => 'choose_service',
-                'category_id' => $draft->selected_category_id,
-                'message' => $assistantText ?: 'Какая именно работа нужна?',
+                'type' => 'ask_question',
+                'question' => [
+                    'id' => null,
+                    'key' => 'service_description',
+                    'text' => $assistantText ?: 'Опишите подробнее, какой результат вы хотите получить?',
+                    'field_type' => 'text',
+                    'options' => [],
+                ],
             ];
             $draft->update(['snapshot' => $snapshot]);
-            $this->transition($draft, 'manual_selection', 'service_unresolved');
+            $this->transition($draft, 'clarifying', 'service_unresolved');
+            $this->assistantMessage($draft, $snapshot['_ui_action']['question']['text']);
 
             return;
         }
 
-        $question = $this->nextQuestion($draft);
+        $question = empty($snapshot['service_auto_selected']) ? $this->nextQuestion($draft) : null;
         if ($question) {
             $snapshot['_ui_action'] = [
                 'type' => 'ask_question',
@@ -463,7 +621,14 @@ class RequestDraftOrchestrator
         $snapshot['master_summary'] = $this->masterSummary($draft);
         $snapshot['_ui_action'] = ['type' => 'review'];
         $draft->update(['snapshot' => $snapshot]);
+        $wasReady = $draft->status === 'ready_for_review';
         $this->transition($draft, 'ready_for_review', 'required_information_complete');
+        if (!$wasReady) {
+            $this->assistantMessage(
+                $draft,
+                trim((string) $assistantText) ?: 'Готово. Проверьте заявку — всё можно исправить перед публикацией.'
+            );
+        }
     }
 
     private function nextQuestion(RequestDraft $draft): ?ProffiWorkQuestion
@@ -542,10 +707,14 @@ class RequestDraftOrchestrator
 
     private function initialSnapshot(array $data): array
     {
+        $isReferenceDraft = !empty($data['_source_context']);
+
         return [
             'title' => null,
             'initial_text' => trim((string) $data['initial_text']),
-            'description' => trim((string) $data['initial_text']),
+            'description' => $isReferenceDraft ? null : trim((string) $data['initial_text']),
+            'normalized_description' => null,
+            'reference_place' => $data['_source_context'] ?? null,
             'answers' => [],
             'location' => [
                 'city' => $data['city_hint'] ?? null,
@@ -570,6 +739,17 @@ class RequestDraftOrchestrator
             'confidence' => ['overall' => 0, 'category' => 0, 'work' => 0, 'facts' => 0],
             'master_summary' => '',
             'multiple_services_detected' => false,
+            'understanding' => [
+                'subject' => null,
+                'action' => null,
+                'problem' => null,
+                'component' => null,
+                'symptoms' => [],
+                'context' => null,
+            ],
+            'semantic_clarification_count' => 0,
+            'candidate_service_ids' => [],
+            'service_auto_selected' => false,
             'safety_notices' => [],
             '_ui_action' => ['type' => 'wait'],
         ];
@@ -597,6 +777,21 @@ class RequestDraftOrchestrator
     private function assistantMessage(RequestDraft $draft, string $content, ?int $questionId = null): void
     {
         $this->message($draft, 'assistant', $content, $questionId, null);
+    }
+
+    private function safeTranscript(RequestDraft $draft): array
+    {
+        return $draft->messages
+            ->whereIn('role', ['user', 'assistant'])
+            ->filter(fn (RequestDraftMessage $message) => trim((string) $message->content) !== '')
+            ->sortBy('id')
+            ->map(fn (RequestDraftMessage $message) => [
+                'id' => (string) $message->id,
+                'role' => $message->role,
+                'text' => (string) $message->content,
+            ])
+            ->values()
+            ->all();
     }
 
     private function advance(RequestDraft $draft, string $event, array $payload = []): void
@@ -702,19 +897,137 @@ class RequestDraftOrchestrator
         return mb_substr(trim((string) $value), 0, 500);
     }
 
-    private function description(RequestDraft $draft): string
+    private function description(RequestDraft $draft, ?string $normalizedDescription = null): string
     {
-        $base = $draft->messages()
-            ->where('role', 'user')
-            ->whereNull('question_id')
-            ->pluck('content')
-            ->filter()
-            ->implode('. ');
+        $base = trim((string) ($normalizedDescription
+            ?: ($draft->snapshot['normalized_description'] ?? '')));
+        if ($base === '') {
+            $base = $draft->messages()
+                ->where('role', 'user')
+                ->whereNull('question_id')
+                ->pluck('content')
+                ->filter()
+                ->unique(fn ($value) => mb_strtolower(trim((string) $value)))
+                ->implode('. ');
+            $base = $this->sentenceCase($base);
+        }
         $details = $this->narrativeAnswers($draft);
+
+        if ($base !== '') {
+            $comparableBase = mb_strtolower($base);
+            $details = $details->reject(function (string $detail) use ($comparableBase) {
+                $value = trim((string) str($detail)->afterLast(':'));
+
+                return $value !== '' && str_contains($comparableBase, mb_strtolower($value));
+            });
+        }
 
         return mb_substr(trim(
             $base.($details->isNotEmpty() ? "\n\nДетали задачи:\n- ".$details->implode("\n- ") : '')
         ), 0, 4000);
+    }
+
+    private function sentenceCase(string $value): string
+    {
+        $value = trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
+        if ($value === '') {
+            return '';
+        }
+
+        return mb_strtoupper(mb_substr($value, 0, 1)).mb_substr($value, 1);
+    }
+
+    private function continueAfterAiTimeout(RequestDraft $draft, RequestDraftMessage $message): void
+    {
+        $detail = trim((string) $message->content);
+        if (mb_strtolower($detail) === 'попробовать ещё раз') {
+            $detail = (string) $draft->messages()
+                ->where('role', 'user')
+                ->where('id', '<', $message->id)
+                ->where('content', '!=', 'Попробовать ещё раз')
+                ->latest('id')
+                ->value('content');
+        }
+
+        $snapshot = $draft->snapshot;
+        $base = $this->sentenceCase((string) ($snapshot['normalized_description'] ?? $snapshot['description'] ?? ''));
+        $detail = $this->sentenceCase($detail);
+        if ($detail !== '' && !str_contains(mb_strtolower($base), mb_strtolower(rtrim($detail, '.!?')))) {
+            $base = rtrim($base);
+            if ($base !== '' && !preg_match('/[.!?]$/u', $base)) {
+                $base .= '.';
+            }
+            if (!preg_match('/[.!?]$/u', $detail)) {
+                $detail .= '.';
+            }
+            $base = trim($base.' '.$detail);
+        }
+
+        if ($base !== '') {
+            $snapshot['normalized_description'] = mb_substr($base, 0, 4000);
+            $snapshot['description'] = $this->description($draft, $snapshot['normalized_description']);
+        }
+        $draft->update(['snapshot' => $snapshot]);
+        $this->advance($draft, 'ai_timeout_detail_preserved', ['message_id' => $message->id]);
+        $this->decideNextAction($draft, 'Добавил детали в заявку. Проверьте описание перед публикацией.');
+    }
+
+    private function resolveServiceAfterAiTimeout(RequestDraft $draft, RequestDraftMessage $message): void
+    {
+        $package = $this->retrieval->retrieve((string) $message->content, 3);
+        $candidate = collect($package['works'] ?? [])->sortByDesc('score')->first();
+        if (!$candidate || (float) ($candidate['score'] ?? 0) < 0.55) {
+            return;
+        }
+
+        $work = ProffiWork::query()
+            ->whereKey((int) ($candidate['work_id'] ?? 0))
+            ->where('is_active', true)
+            ->first();
+        if (!$work) {
+            return;
+        }
+
+        $snapshot = $draft->snapshot;
+        $snapshot['service_auto_selected'] = false;
+        $snapshot['title'] = $this->title($draft, $work->title);
+        $draft->selected_category_id = $work->category_id;
+        $draft->selected_service_id = $work->id;
+        $draft->snapshot = $snapshot;
+        $draft->save();
+    }
+
+    private function validConfirmedLocation(array $location): bool
+    {
+        $lat = $location['lat'] ?? null;
+        $lng = $location['lng'] ?? null;
+
+        return trim((string) ($location['city'] ?? '')) !== ''
+            && trim((string) ($location['address'] ?? '')) !== ''
+            && is_numeric($lat)
+            && is_numeric($lng)
+            && (float) $lat >= -90
+            && (float) $lat <= 90
+            && (float) $lng >= -180
+            && (float) $lng <= 180;
+    }
+
+    private function photos(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return collect($value)
+            ->filter(fn ($photo) => is_array($photo) && trim((string) ($photo['url'] ?? '')) !== '')
+            ->take(10)
+            ->map(fn ($photo) => [
+                'upload_id' => $this->shortText($photo['upload_id'] ?? $photo['path'] ?? null, 512),
+                'url' => $this->shortText($photo['url'] ?? null, 2048),
+                'caption' => $this->shortText($photo['caption'] ?? null, 160),
+            ])
+            ->values()
+            ->all();
     }
 
     private function title(RequestDraft $draft, ?string $label = null): string

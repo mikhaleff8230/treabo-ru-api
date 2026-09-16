@@ -27,7 +27,7 @@ class TreaboMobileUpdateSetting extends Model
                 'min_supported_build' => 1,
                 'force_update' => false,
                 'android_url' => $appType === 'specialist'
-                    ? 'https://treabo.ru/downloads/treabo-proffi.apk'
+                    ? 'https://treabo.ru/downloads/treabo-specialist.apk'
                     : 'https://treabo.ru/downloads/treabo-client.apk',
                 'ios_url' => null,
                 'release_notes' => null,

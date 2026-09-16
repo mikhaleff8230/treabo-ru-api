@@ -10,11 +10,21 @@ class PlaceImage extends Model
     protected $fillable = [
         'place_id',
         'url',
+        'sort_order',
+        'is_cover',
         'thumbnail_url',
         'width',
         'height',
         'file_size',
         'mime_type',
+    ];
+
+    protected $casts = [
+        'sort_order' => 'integer',
+        'is_cover' => 'boolean',
+        'width' => 'integer',
+        'height' => 'integer',
+        'file_size' => 'integer',
     ];
 
     public function place()
@@ -103,4 +113,4 @@ class PlaceImage extends Model
         }
         return $baseUrl . '/storage/' . ltrim($path, '/');
     }
-} 
+}

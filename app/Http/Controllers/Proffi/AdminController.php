@@ -672,6 +672,7 @@ class AdminController extends Controller
             'customer_name' => $task->customer?->name,
             'customer_phone' => $task->customer?->profile?->contact,
             'accepted_specialist_id' => $task->accepted_specialist_id ? (string) $task->accepted_specialist_id : null,
+            'source_place_id' => $task->source_place_id ? (string) $task->source_place_id : null,
             'accepted_specialist_name' => $task->acceptedSpecialist?->name,
             'applications_count' => (int) ($task->applications_count ?? 0),
             'photos' => $this->mediaList($task->photos ?: []),

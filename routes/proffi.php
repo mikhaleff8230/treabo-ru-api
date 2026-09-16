@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\MoldovaLocationController;
 use App\Http\Controllers\Api\RussiaLocationController;
 use App\Http\Controllers\Proffi\AdminController;
+use App\Http\Controllers\Proffi\AdminPlaceController;
 use App\Http\Controllers\Api\AiJobDraftController;
 use App\Http\Controllers\Proffi\AiCategorySchemaController;
 use App\Http\Controllers\Proffi\AiChatKnowledgeController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Proffi\AiKnowledgeLabController;
 use App\Http\Controllers\Proffi\AiOperationsController;
 use App\Http\Controllers\Proffi\ProffiWorkController;
 use App\Http\Controllers\Proffi\ProffiWorkQuestionController;
+use App\Http\Controllers\Proffi\ProffiPlaceController;
 use App\Http\Controllers\Proffi\QuestionFlowController;
 use App\Http\Controllers\Proffi\ApplicationController;
 use App\Http\Controllers\Proffi\AuthController;
@@ -43,6 +45,7 @@ Route::get('/proffi-health', function () {
 });
 
 $proffiAdminRoutes = function () {
+    Route::post('/uploads', [UploadController::class, 'store']);
     Route::get('/stats', [AdminController::class, 'stats']);
     Route::get('/users', [AdminController::class, 'users']);
     Route::get('/customers', [AdminController::class, 'customers']);
@@ -72,6 +75,11 @@ $proffiAdminRoutes = function () {
     Route::post('/tasks', [AdminController::class, 'createTask']);
     Route::put('/tasks/{task}', [AdminController::class, 'updateTask']);
     Route::delete('/tasks/{task}', [AdminController::class, 'deleteTask']);
+
+    Route::get('/places', [AdminPlaceController::class, 'index']);
+    Route::get('/places/{place}', [AdminPlaceController::class, 'show'])->whereNumber('place');
+    Route::patch('/places/{place}', [AdminPlaceController::class, 'update'])->whereNumber('place');
+    Route::delete('/places/{place}', [AdminPlaceController::class, 'destroy'])->whereNumber('place');
     Route::get('/applications', [AdminController::class, 'applications']);
     Route::get('/chats', [AdminController::class, 'chats']);
     Route::get('/chats/{chat}/messages', [AdminController::class, 'chatMessages']);
@@ -201,6 +209,10 @@ Route::get('/jobs/{job}/attributes', [JobAttributeController::class, 'show'])->w
 Route::get('/tasks/{job}/attributes', [JobAttributeController::class, 'show'])->whereNumber('job');
 Route::get('/tasks/{task}', [TaskController::class, 'show'])->whereNumber('task');
 Route::get('/tasks/{task}/recommended-specialists', [TaskController::class, 'recommendedSpecialists'])->whereNumber('task');
+Route::get('/places', [ProffiPlaceController::class, 'index']);
+Route::get('/places/mine', [ProffiPlaceController::class, 'mine'])->middleware('auth:sanctum');
+Route::get('/users/{user}/places', [ProffiPlaceController::class, 'userPlaces'])->whereNumber('user');
+Route::get('/places/{place}', [ProffiPlaceController::class, 'show'])->whereNumber('place');
 Route::get('/specialists', [SpecialistController::class, 'index']);
 Route::get('/specialists/{user}', [SpecialistController::class, 'show'])->whereNumber('user');
 Route::get('/specialists/{user}/reviews', [SpecialistReviewController::class, 'index'])->whereNumber('user');
@@ -208,6 +220,14 @@ Route::get('/specialists/{user}/reviews', [SpecialistReviewController::class, 'i
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/request-drafts/{draft}/confirm', [RequestDraftController::class, 'confirm']);
     Route::post('/uploads', [UploadController::class, 'store']);
+
+    Route::post('/places', [ProffiPlaceController::class, 'store']);
+    Route::patch('/places/{place}', [ProffiPlaceController::class, 'update'])->whereNumber('place');
+    Route::delete('/places/{place}', [ProffiPlaceController::class, 'destroy'])->whereNumber('place');
+    Route::post('/places/{place}/favorite', [ProffiPlaceController::class, 'favorite'])->whereNumber('place');
+    Route::delete('/places/{place}/favorite', [ProffiPlaceController::class, 'unfavorite'])->whereNumber('place');
+    Route::post('/places/{place}/create-request', [ProffiPlaceController::class, 'createRequest'])->whereNumber('place');
+    Route::post('/tasks/{task}/place-draft', [ProffiPlaceController::class, 'createFromTask'])->whereNumber('task');
 
     Route::post('/tasks', [TaskController::class, 'store']);
     Route::patch('/tasks/{task}/budget', [TaskController::class, 'updateBudget'])->whereNumber('task');
